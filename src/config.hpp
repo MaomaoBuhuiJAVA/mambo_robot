@@ -30,8 +30,10 @@ struct AppConfig {
     static constexpr int kCameraWidth      = 640;
     static constexpr int kCameraHeight     = 480;
     static constexpr int kCameraTargetFps  = 30;
-    static constexpr int kVideoStreamFps   = 15;
-    static constexpr int kVideoJpegQuality = 80;
+    static constexpr int kVideoStreamFps   = 15;  // 流帧率
+    static constexpr int kVideoJpegQuality = 65;  // JPEG 质量
+    static constexpr int kStreamWidth      = 480; // 流编码宽度（检测仍用原始分辨率）
+    static constexpr int kStreamHeight     = 270; // 流编码高度
 
     static constexpr int kVoiceThreshold   = 200;
     static constexpr int kSilenceThreshold = 200;

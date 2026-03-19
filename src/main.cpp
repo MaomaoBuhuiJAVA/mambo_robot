@@ -37,6 +37,12 @@ int main() {
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
     cap.set(cv::CAP_PROP_FPS,          mambo::AppConfig::kCameraTargetFps);
 
+    // 共享帧（摄像头线程写，推理线程读）
+    std::mutex              cap_mtx;
+    cv::Mat                 shared_frame;
+    uint64_t                shared_seq = 0;
+    std::condition_variable cap_cv;
+
     std::mutex data_mtx;
     cv::Rect   fast_box;
     bool       has_face         = false;
@@ -47,19 +53,76 @@ int main() {
     std::atomic<bool> running(true);
     std::atomic<int>  det_fps(0);
 
-    // 视觉线程：每帧检测 + 推送视频流，每15帧完整推理
-    std::thread vision_thread([&]() {
-        int frame_count = 0, cnt = 0;
-        auto t0 = std::chrono::steady_clock::now();
+    // 线程1：只读摄像头 + 推流，不做任何推理（保证流帧率稳定）
+    std::thread capture_thread([&]() {
         while (running) {
             cv::Mat frame;
             cap >> frame;
             if (frame.empty()) continue;
-            frame_count++;
 
             web.PushVideoFrame(frame); // 异步编码，不阻塞
 
+            {
+                std::lock_guard<std::mutex> lk(cap_mtx);
+                frame.copyTo(shared_frame);
+                ++shared_seq;
+            }
+            cap_cv.notify_one();
+        }
+    });
+
+    // 线程2：推理线程，从共享帧做检测，结果直接推送眼睛UI
+    std::thread vision_thread([&]() {
+        int frame_count = 0, cnt = 0;
+        uint64_t last_seq = 0;
+        float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
+        float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
+        auto t0 = std::chrono::steady_clock::now();
+        while (running) {
+            cv::Mat frame;
+            int fw, fh;
+            {
+                std::unique_lock<std::mutex> lk(cap_mtx);
+                cap_cv.wait_for(lk, std::chrono::milliseconds(100),
+                    [&]() { return !running || shared_seq != last_seq; });
+                if (!running) break;
+                if (shared_frame.empty() || shared_seq == last_seq) continue;
+                shared_frame.copyTo(frame);
+                fw = frame.cols; fh = frame.rows;
+                last_seq = shared_seq;
+            }
+            frame_count++;
+
             auto boxes = vision.DetectFaceBoxes(frame);
+
+            // 推理完立即更新坐标并推送，不经过主线程
+            {
+                std::lock_guard<std::mutex> lk(data_mtx);
+                has_face       = !boxes.empty();
+                fast_box       = has_face ? boxes[0] : cv::Rect();
+                latest_frame_w = fw;
+                latest_frame_h = fh;
+            }
+
+            // 直接在推理线程推送眼睛数据，最小化延迟
+            {
+                std::string emo;
+                {
+                    std::lock_guard<std::mutex> lk(data_mtx);
+                    emo = slow_faces.empty() ? "ZhongXing" : slow_faces[0].emotion;
+                }
+                if (!boxes.empty()) {
+                    float target_cx = boxes[0].x + boxes[0].width  / 2.0f;
+                    float target_cy = boxes[0].y + boxes[0].height / 2.0f;
+                    smooth_cx += (target_cx - smooth_cx) * 0.4f;
+                    smooth_cy += (target_cy - smooth_cy) * 0.4f;
+                }
+                float half_w = std::max(1.0f, fw / 2.0f);
+                float half_h = std::max(1.0f, fh / 2.0f);
+                float nx = -(smooth_cx - half_w) / half_w;
+                float ny =  (smooth_cy - half_h) / half_h;
+                web.PushEyeData(nx, ny, emo);
+            }
 
             std::vector<mambo::ObjectResult> objects;
             std::vector<mambo::FaceResult>   faces;
@@ -68,13 +131,10 @@ int main() {
 
             {
                 std::lock_guard<std::mutex> lk(data_mtx);
-                has_face       = !boxes.empty();
-                fast_box       = has_face ? boxes[0] : cv::Rect();
-                latest_frame_w = frame.cols;
-                latest_frame_h = frame.rows;
                 if (frame_count % 15 == 0) {
                     slow_objects = objects;
                     slow_faces   = faces;
+                    if (!faces.empty()) dialog.SetCurrentEmotion(faces[0].emotion);
                 }
             }
 
@@ -85,9 +145,7 @@ int main() {
         }
     });
 
-    // 主线程：推送数据 + 控制台打印
-    float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
-    float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
+    // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
 
     while (true) {
@@ -105,23 +163,6 @@ int main() {
         }
 
         mambo::ChatState state = dialog.GetState();
-        std::string emo = "ZhongXing";
-
-        if (hf) {
-            smooth_cx = box.x + box.width  / 2.0f;
-            smooth_cy = box.y + box.height / 2.0f;
-        }
-        if (!faces.empty()) {
-            emo = faces[0].emotion;
-            dialog.SetCurrentEmotion(emo);
-        }
-
-        // 推送眼睛UI（用实际分辨率归一化，负号修正镜像）
-        float half_w = std::max(1.0f, fw / 2.0f);
-        float half_h = std::max(1.0f, fh / 2.0f);
-        float nx = -(smooth_cx - half_w) / half_w;
-        float ny =  (smooth_cy - half_h) / half_h;
-        web.PushEyeData(nx, ny, emo);
 
         // 轮询串口接收 ESP32 上报
         serial.Poll();
@@ -133,7 +174,6 @@ int main() {
             std::string ss = (state == mambo::ChatState::kWaiting  ? "waiting"   :
                               state == mambo::ChatState::kListening ? "listening" :
                               state == mambo::ChatState::kThinking  ? "thinking"  : "speaking");
-
             // 构建 status JSON
             std::string json = "{";
             json += "\"fps\":" + std::to_string(det_fps.load());
@@ -195,6 +235,8 @@ int main() {
     }
 
     running = false;
+    cap_cv.notify_all();
+    capture_thread.join();
     vision_thread.join();
     curl_global_cleanup();
     return 0;

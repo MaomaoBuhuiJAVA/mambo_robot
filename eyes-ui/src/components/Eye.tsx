@@ -9,8 +9,8 @@ interface EyeProps {
 }
 
 export function Eye({ config, mouseX, mouseY, isBlinking }: EyeProps) {
-  const springX = useSpring(mouseX, { stiffness: 100, damping: 12, mass: 0.5 });
-  const springY = useSpring(mouseY, { stiffness: 100, damping: 12, mass: 0.5 });
+  const springX = useSpring(mouseX, { stiffness: 400, damping: 30, mass: 0.3 });
+  const springY = useSpring(mouseY, { stiffness: 400, damping: 30, mass: 0.3 });
 
   // 跟随范围 ±120px
   const lookX = useTransform(springX, [-1, 1], [-120, 120]);

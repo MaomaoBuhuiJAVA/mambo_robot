@@ -164,7 +164,7 @@ void loop() {
         // 读传感器
         mpuRead();
         float v = ina.getBusVoltage();
-        float c = abs(ina.getShuntVoltage_mV() / R_SHUNT);
+        float c = abs(ina.getCurrent_mA()) / 1000.0f; // mA 转 A
 
         // 转换
         float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g  = accelG(az);
