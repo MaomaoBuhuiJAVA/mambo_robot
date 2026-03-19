@@ -105,6 +105,7 @@ void setup() {
     // INA226
     if (ina.begin()) {
         ina.setMaxCurrentShunt(5.0, R_SHUNT);
+        ina.setAverage(INA226_4_SAMPLES);
         Serial.println("[OK] INA226");
     } else {
         Serial.println("[FAIL] INA226 未检测到");
@@ -164,7 +165,7 @@ void loop() {
         // 读传感器
         mpuRead();
         float v = ina.getBusVoltage();
-        float c = abs(ina.getCurrent_mA()) / 1000.0f; // mA 转 A
+        float c = abs(ina.getCurrent_mA()) / 1000.0f;
 
         // 转换
         float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g  = accelG(az);

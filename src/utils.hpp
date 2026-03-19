@@ -140,11 +140,18 @@ public:
     std::string GetEsp32Status() {
         std::lock_guard<std::mutex> lk(rx_mtx_);
         if (!esp_data_.valid) return "";
-        char buf[128];
-        snprintf(buf, sizeof(buf), "\"v\":%.2f,\"c\":%.1f,\"cliff\":%d,\"radar\":%d",
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "\"v\":%.2f,\"c\":%.4f,"
+                 "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
+                 "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
+                 "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\"",
                  esp_data_.v, esp_data_.c,
+                 esp_data_.ax, esp_data_.ay, esp_data_.az,
+                 esp_data_.gx, esp_data_.gy, esp_data_.gz,
                  esp_data_.cliff ? 1 : 0,
-                 esp_data_.radar ? 1 : 0);
+                 esp_data_.radar ? 1 : 0,
+                 esp_data_.act.c_str());
         return buf;
     }
 };
