@@ -4,6 +4,7 @@
 #include "vision_engine.hpp"
 #include "dialog_system.hpp"
 #include <opencv2/opencv.hpp>
+#include <algorithm>
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -22,16 +23,26 @@ int main() {
     mambo::DialogSystem dialog(&serial);
     dialog.Start();
 
-    cv::VideoCapture cap(0);
+    cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
+    if (!cap.isOpened()) {
+        std::cerr << "[Error] 无法打开摄像头 index=" << mambo::AppConfig::kCameraIndex << std::endl;
+        curl_global_cleanup();
+        return 1;
+    }
+
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
     cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, mambo::AppConfig::kCameraWidth);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
+    cap.set(cv::CAP_PROP_FPS, mambo::AppConfig::kCameraTargetFps);
 
     std::mutex data_mtx;
     cv::Rect   fast_box;
     bool       has_face = false;
     std::vector<mambo::ObjectResult> slow_objects;
     std::vector<mambo::FaceResult>   slow_faces;
+    int latest_frame_width = mambo::AppConfig::kCameraWidth;
+    int latest_frame_height = mambo::AppConfig::kCameraHeight;
     std::atomic<bool> running(true);
     std::atomic<int>  det_fps(0);
 
@@ -44,6 +55,7 @@ int main() {
             cap >> frame;
             if (frame.empty()) continue;
             frame_count++;
+            web.PushVideoFrame(frame);
 
             auto boxes = vision.DetectFaceBoxes(frame);
 
@@ -56,6 +68,8 @@ int main() {
                 std::lock_guard<std::mutex> lk(data_mtx);
                 has_face = !boxes.empty();
                 fast_box = has_face ? boxes[0] : cv::Rect();
+                latest_frame_width = frame.cols;
+                latest_frame_height = frame.rows;
                 if (frame_count % 15 == 0) {
                     slow_objects = objects;
                     slow_faces   = faces;
@@ -70,19 +84,24 @@ int main() {
     });
 
     // 主线程：推送数据 + 控制台打印
-    float smooth_cx = 320, smooth_cy = 240;
+    float smooth_cx = mambo::AppConfig::kCameraWidth / 2.0f;
+    float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
     auto last_print = std::chrono::steady_clock::now();
 
     while (true) {
         cv::Rect box; bool hf;
         std::vector<mambo::ObjectResult> objects;
         std::vector<mambo::FaceResult>   faces;
+        int frame_width;
+        int frame_height;
         {
             std::lock_guard<std::mutex> lk(data_mtx);
             box     = fast_box;
             hf      = has_face;
             objects = slow_objects;
             faces   = slow_faces;
+            frame_width = latest_frame_width;
+            frame_height = latest_frame_height;
         }
 
         mambo::ChatState state = dialog.GetState();
@@ -98,8 +117,10 @@ int main() {
         }
 
         // 推送给浏览器
-        float nx = -(smooth_cx - 320.0f) / 320.0f;  // 负号修正镜像
-        float ny =  (smooth_cy - 240.0f) / 240.0f;
+        float half_w = std::max(1.0f, frame_width / 2.0f);
+        float half_h = std::max(1.0f, frame_height / 2.0f);
+        float nx = -(smooth_cx - half_w) / half_w;  // 负号修正镜像
+        float ny =  (smooth_cy - half_h) / half_h;
         web.PushEyeData(nx, ny, emo);
 
         // 控制台每秒打印
