@@ -7,6 +7,7 @@ namespace mambo {
 struct AppConfig {
     static constexpr const char* kAlsaRecDevice = "plughw:2,0";
     static constexpr const char* kAlsaPlayDevice = "plughw:3,0";
+    static constexpr const char* kWebHost = "0.0.0.0";
     
     // API Keys
     static constexpr const char* kBaiduApiKey = "mOEMA8FfryEAdeEsJ5cIMH0D";
@@ -21,6 +22,7 @@ struct AppConfig {
     static constexpr const char* kBaseImgDir = "./faces/";
 
     static constexpr const char* kSerialPort = "/dev/ttyS7";
+<<<<<<< HEAD
     static constexpr const char* kWebHost = "0.0.0.0";
     static constexpr int kWebPort = 8080;
 
@@ -31,6 +33,15 @@ struct AppConfig {
     static constexpr int kCameraTargetFps  = 30;
     static constexpr int kVideoStreamFps   = 15;
     static constexpr int kVideoJpegQuality = 80;
+=======
+    static constexpr int kWebPort = 8080;
+    static constexpr int kCameraIndex = 0;
+    static constexpr int kCameraWidth = 640;
+    static constexpr int kCameraHeight = 480;
+    static constexpr int kCameraTargetFps = 30;
+    static constexpr int kVideoStreamFps = 15;
+    static constexpr int kVideoJpegQuality = 88;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
 
     static constexpr int kVoiceThreshold = 200;
     static constexpr int kSilenceThreshold = 200;

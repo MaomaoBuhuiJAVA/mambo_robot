@@ -24,25 +24,41 @@ int main() {
     mambo::DialogSystem dialog(&serial);
     dialog.Start();
 
+<<<<<<< HEAD
     // 摄像头初始化（使用配置常量）
+=======
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
     if (!cap.isOpened()) {
         std::cerr << "[Error] 无法打开摄像头 index=" << mambo::AppConfig::kCameraIndex << std::endl;
         curl_global_cleanup();
         return 1;
     }
+<<<<<<< HEAD
     cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
     cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
     cap.set(cv::CAP_PROP_FRAME_WIDTH,  mambo::AppConfig::kCameraWidth);
     cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
     cap.set(cv::CAP_PROP_FPS,          mambo::AppConfig::kCameraTargetFps);
+=======
+
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+    cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, mambo::AppConfig::kCameraWidth);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
+    cap.set(cv::CAP_PROP_FPS, mambo::AppConfig::kCameraTargetFps);
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
 
     std::mutex data_mtx;
     cv::Rect   fast_box;
     bool       has_face = false;
     std::vector<mambo::ObjectResult> slow_objects;
     std::vector<mambo::FaceResult>   slow_faces;
+<<<<<<< HEAD
     int latest_frame_width  = mambo::AppConfig::kCameraWidth;
+=======
+    int latest_frame_width = mambo::AppConfig::kCameraWidth;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     int latest_frame_height = mambo::AppConfig::kCameraHeight;
     std::atomic<bool> running(true);
     std::atomic<int>  det_fps(0);
@@ -56,6 +72,7 @@ int main() {
             cap >> frame;
             if (frame.empty()) continue;
             frame_count++;
+            web.PushVideoFrame(frame);
 
             web.PushVideoFrame(frame); // 异步编码，不阻塞
 
@@ -70,7 +87,11 @@ int main() {
                 std::lock_guard<std::mutex> lk(data_mtx);
                 has_face = !boxes.empty();
                 fast_box = has_face ? boxes[0] : cv::Rect();
+<<<<<<< HEAD
                 latest_frame_width  = frame.cols;
+=======
+                latest_frame_width = frame.cols;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                 latest_frame_height = frame.rows;
                 if (frame_count % 15 == 0) {
                     slow_objects = objects;
@@ -86,7 +107,11 @@ int main() {
     });
 
     // 主线程：推送数据 + 控制台打印
+<<<<<<< HEAD
     float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
+=======
+    float smooth_cx = mambo::AppConfig::kCameraWidth / 2.0f;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
     auto last_print = std::chrono::steady_clock::now();
 
@@ -94,15 +119,25 @@ int main() {
         cv::Rect box; bool hf;
         std::vector<mambo::ObjectResult> objects;
         std::vector<mambo::FaceResult>   faces;
+<<<<<<< HEAD
         int frame_w, frame_h;
+=======
+        int frame_width;
+        int frame_height;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
         {
             std::lock_guard<std::mutex> lk(data_mtx);
             box     = fast_box;
             hf      = has_face;
             objects = slow_objects;
             faces   = slow_faces;
+<<<<<<< HEAD
             frame_w = latest_frame_width;
             frame_h = latest_frame_height;
+=======
+            frame_width = latest_frame_width;
+            frame_height = latest_frame_height;
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
         }
 
         mambo::ChatState state = dialog.GetState();
@@ -117,10 +152,17 @@ int main() {
             dialog.SetCurrentEmotion(emo);
         }
 
+<<<<<<< HEAD
         // 推送眼睛UI（用实际分辨率归一化）
         float half_w = std::max(1.0f, frame_w / 2.0f);
         float half_h = std::max(1.0f, frame_h / 2.0f);
         float nx = -(smooth_cx - half_w) / half_w;
+=======
+        // 推送给浏览器
+        float half_w = std::max(1.0f, frame_width / 2.0f);
+        float half_h = std::max(1.0f, frame_height / 2.0f);
+        float nx = -(smooth_cx - half_w) / half_w;  // 负号修正镜像
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
         float ny =  (smooth_cy - half_h) / half_h;
         web.PushEyeData(nx, ny, emo);
 

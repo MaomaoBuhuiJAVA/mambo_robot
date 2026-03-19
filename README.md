@@ -1,6 +1,6 @@
 # Mambo Robot
 
-一个集成视觉识别、语音对话和Web遥控的智能机器人项目。
+一个集成视觉识别、语音对话、视频流接入和 Web 遥控的智能机器人项目。
 
 ## 项目结构
 
@@ -34,8 +34,9 @@ mambo_robot/
 1. **视觉引擎** - NPU YOLO目标检测 + OpenCV人脸识别和情绪分析
 2. **语音对话** - 百度ASR/TTS + DeepSeek对话生成
 3. **动态眼神** - 矢量图形渲染的表情系统
-4. **Web遥控** - HTTP服务器提供远程控制接口
-5. **ESP32控制** - 串口通信控制舵机和电机
+4. **视频流服务** - HTTP MJPEG 实时视频流和单帧抓图接口
+5. **Web遥控** - HTTP服务器提供远程控制接口
+6. **ESP32控制** - 串口通信控制舵机和电机
 
 ## 依赖安装
 
@@ -68,6 +69,86 @@ chmod +x build.sh
 - 模型文件路径
 - 串口设备路径
 - Web服务器端口
+- 摄像头与视频流参数
+
+## 视频流接入
+
+项目现在提供标准化的视频流接口，供软件开发工程师直接接入：
+
+### 1. MJPEG 实时视频流
+
+```text
+GET /api/v1/video/stream
+Content-Type: multipart/x-mixed-replace; boundary=frame
+```
+
+适用场景：
+- 浏览器 `<img>` 直接显示
+- OpenCV `VideoCapture(url)` 拉流
+- VLC、上位机、巡检面板、调试工具
+
+### 2. 单帧 JPEG 抓图
+
+```text
+GET /api/v1/video/frame
+Content-Type: image/jpeg
+```
+
+适用场景：
+- 健康检查
+- 周期截图
+- AI/规则引擎按需拉取最新画面
+
+### 3. 视频流元信息
+
+```text
+GET /api/v1/video/meta
+Content-Type: application/json
+```
+
+返回字段示例：
+
+```json
+{
+  "ready": true,
+  "width": 640,
+  "height": 480,
+  "capture_fps": 30,
+  "stream_fps": 15,
+  "jpeg_quality": 88,
+  "frame_id": 1024,
+  "timestamp_ms": 1760000000000
+}
+```
+
+### 接入示例
+
+浏览器：
+
+```html
+<img src="http://<robot-ip>:8080/api/v1/video/stream" alt="mambo video stream" />
+```
+
+OpenCV：
+
+```cpp
+cv::VideoCapture cap("http://<robot-ip>:8080/api/v1/video/stream");
+cv::Mat frame;
+cap >> frame;
+```
+
+curl 抓图：
+
+```bash
+curl http://<robot-ip>:8080/api/v1/video/frame --output latest.jpg
+```
+
+### 性能策略
+
+- 摄像头采集、视觉推理、JPEG 编码、HTTP 分发已解耦
+- 服务端只编码“最新一帧”，避免多客户端重复编码
+- MJPEG 对接简单、兼容性强，适合机器人调试和上位机快速集成
+- 质量和帧率可在 `src/config.hpp` 中通过 `kVideoJpegQuality`、`kVideoStreamFps` 调整
 
 ## ESP32烧录
 

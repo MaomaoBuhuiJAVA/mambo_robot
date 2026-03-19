@@ -12,6 +12,10 @@
 #include <thread>
 #include <mutex>
 #include <string>
+<<<<<<< HEAD
+=======
+#include <functional>
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
 #include <vector>
 
 namespace mambo {
@@ -44,6 +48,18 @@ class WebServer {
     std::shared_ptr<const std::vector<uchar>>     latest_jpeg_;
     uint64_t                                      latest_jpeg_seq_ = 0;
 
+    std::mutex video_raw_mtx_;
+    std::condition_variable video_raw_cv_;
+    cv::Mat latest_raw_frame_;
+    uint64_t latest_raw_seq_ = 0;
+
+    std::mutex video_jpeg_mtx_;
+    std::shared_ptr<const std::vector<uchar>> latest_jpeg_;
+    uint64_t latest_jpeg_seq_ = 0;
+    int latest_frame_width_ = 0;
+    int latest_frame_height_ = 0;
+    long long latest_frame_ts_ms_ = 0;
+
 public:
     // ── 数据推送接口 ─────────────────────────────────────────────
 
@@ -54,20 +70,30 @@ public:
                   + ",\"emotion\":\"" + emotion + "\"}";
     }
 
+<<<<<<< HEAD
     // 视觉线程每帧调用（异步编码，不阻塞视觉线程）
+=======
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     void PushVideoFrame(const cv::Mat& frame) {
         if (frame.empty()) return;
         {
             std::lock_guard<std::mutex> lk(video_raw_mtx_);
             frame.copyTo(latest_raw_frame_);
+<<<<<<< HEAD
             latest_frame_width_  = frame.cols;
             latest_frame_height_ = frame.rows;
             latest_frame_ts_ms_  = NowMs();
+=======
+            latest_frame_width_ = frame.cols;
+            latest_frame_height_ = frame.rows;
+            latest_frame_ts_ms_ = NowMs();
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
             ++latest_raw_seq_;
         }
         video_raw_cv_.notify_one();
     }
 
+<<<<<<< HEAD
     void PushStatus(const std::string& json) {
         std::lock_guard<std::mutex> lk(status_mtx_);
         status_data_ = json;
@@ -144,11 +170,54 @@ public:
                         if (!sink.write(reinterpret_cast<const char*>(frame->data()), frame->size())) return false;
                         if (!sink.write("\r\n", 2)) return false;
                         last_sent_seq = seq;
+=======
+    void Start(SerialManager* serial) {
+        running_ = true;
+
+        // serve eyes-ui 静态文件
+        svr.set_mount_point("/", "./eyes-ui/dist");
+
+        // 控制台页面（移到 /control）
+        svr.Get("/control", [](const httplib::Request&, httplib::Response& res) {
+            std::string html =
+                "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+                "<style>button{width:100px;height:100px;font-size:24px;margin:10px;border-radius:20px;background:#00d7ff;border:none;}</style>"
+                "</head><body style=\"text-align:center; background:#222; color:white; padding-top:50px;\">"
+                "<h2>Mambo</h2>"
+                "<div><button onclick=\"fetch('/cmd?act=forward')\">FWD</button></div>"
+                "<div>"
+                "<button onclick=\"fetch('/cmd?act=left')\">LEFT</button>"
+                "<button onclick=\"fetch('/cmd?act=stop')\" style=\"background:#ff4444;\">STOP</button>"
+                "<button onclick=\"fetch('/cmd?act=right')\">RIGHT</button>"
+                "</div>"
+                "<div><button onclick=\"fetch('/cmd?act=backward')\">BACK</button></div>"
+                "</body></html>";
+            res.set_content(html, "text/html");
+        });
+
+        svr.Get("/cmd", [serial](const httplib::Request& req, httplib::Response& res) {
+            if (req.has_param("act") && serial) serial->SendCommand(req.get_param_value("act"));
+            res.set_content("OK", "text/plain");
+        });
+
+        // SSE 端点：浏览器长连接，持续接收眼睛数据
+        svr.Get("/eyes", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            res.set_chunked_content_provider("text/event-stream",
+                [this](size_t /*offset*/, httplib::DataSink& sink) {
+                    while (running_) {
+                        std::string data;
+                        { std::lock_guard<std::mutex> lk(sse_mtx_); data = latest_data_; }
+                        std::string msg = "data: " + data + "\n\n";
+                        if (!sink.write(msg.c_str(), msg.size())) return false;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(33)); // ~30fps
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                     }
                     return true;
                 });
         });
 
+<<<<<<< HEAD
         // 兼容旧路径 /stream
         svr.Get("/stream", [this](const httplib::Request& req, httplib::Response& res) {
             svr.Get("/api/v1/video/stream", [](const httplib::Request&, httplib::Response&){});
@@ -157,6 +226,29 @@ public:
             res.set_chunked_content_provider("multipart/x-mixed-replace; boundary=frame",
                 [this](size_t, httplib::DataSink& sink) {
                     uint64_t last_sent_seq = 0;
+=======
+        // 单帧抓图接口，适合调试、巡检和截图
+        svr.Get("/api/v1/video/frame", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            uint64_t seq = 0;
+            auto frame = GetLatestEncodedFrame(seq);
+            if (!frame) {
+                res.status = 503;
+                res.set_content("video stream is not ready", "text/plain");
+                return;
+            }
+            res.set_header("X-Frame-Id", std::to_string(seq));
+            res.set_content(reinterpret_cast<const char*>(frame->data()), frame->size(), "image/jpeg");
+        });
+
+        // MJPEG 实时流，兼容浏览器、OpenCV、VLC、上位机
+        svr.Get("/api/v1/video/stream", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            res.set_chunked_content_provider("multipart/x-mixed-replace; boundary=frame",
+                [this](size_t /*offset*/, httplib::DataSink& sink) {
+                    uint64_t last_sent_seq = 0;
+                    const auto frame_interval = std::chrono::milliseconds(1000 / std::max(1, AppConfig::kVideoStreamFps));
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                     while (running_) {
                         uint64_t seq = 0;
                         auto frame = GetLatestEncodedFrame(seq);
@@ -165,12 +257,24 @@ public:
                             continue;
                         }
                         if (seq == last_sent_seq) {
+<<<<<<< HEAD
                             std::this_thread::sleep_for(std::chrono::milliseconds(66));
                             continue;
                         }
                         std::string header =
                             "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
                             + std::to_string(frame->size()) + "\r\n\r\n";
+=======
+                            std::this_thread::sleep_for(frame_interval);
+                            continue;
+                        }
+
+                        std::string header =
+                            "--frame\r\n"
+                            "Content-Type: image/jpeg\r\n"
+                            "Content-Length: " + std::to_string(frame->size()) + "\r\n"
+                            "X-Frame-Id: " + std::to_string(seq) + "\r\n\r\n";
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                         if (!sink.write(header.c_str(), header.size())) return false;
                         if (!sink.write(reinterpret_cast<const char*>(frame->data()), frame->size())) return false;
                         if (!sink.write("\r\n", 2)) return false;
@@ -180,6 +284,7 @@ public:
                 });
         });
 
+<<<<<<< HEAD
         // ── 单帧抓图 /api/v1/video/frame ─────────────────────────
         svr.Get("/api/v1/video/frame", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
@@ -257,6 +362,45 @@ public:
 
         encoder_thread = std::thread([this]() { VideoEncodeLoop(); });
         server_thread  = std::thread([this]() { svr.listen(AppConfig::kWebHost, AppConfig::kWebPort); });
+=======
+        // 元信息接口，便于接入方做能力探测
+        svr.Get("/api/v1/video/meta", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            int width = 0;
+            int height = 0;
+            long long timestamp_ms = 0;
+            {
+                std::lock_guard<std::mutex> lk(video_raw_mtx_);
+                width = latest_frame_width_;
+                height = latest_frame_height_;
+                timestamp_ms = latest_frame_ts_ms_;
+            }
+
+            uint64_t seq = 0;
+            bool ready = false;
+            {
+                std::lock_guard<std::mutex> lk(video_jpeg_mtx_);
+                ready = latest_jpeg_ && !latest_jpeg_->empty();
+                seq = latest_jpeg_seq_;
+            }
+
+            std::ostringstream oss;
+            oss << "{"
+                << "\"ready\":" << (ready ? "true" : "false")
+                << ",\"width\":" << width
+                << ",\"height\":" << height
+                << ",\"capture_fps\":" << AppConfig::kCameraTargetFps
+                << ",\"stream_fps\":" << AppConfig::kVideoStreamFps
+                << ",\"jpeg_quality\":" << AppConfig::kVideoJpegQuality
+                << ",\"frame_id\":" << seq
+                << ",\"timestamp_ms\":" << timestamp_ms
+                << "}";
+            res.set_content(oss.str(), "application/json");
+        });
+
+        encoder_thread = std::thread([this]() { VideoEncodeLoop(); });
+        server_thread = std::thread([this]() { svr.listen(AppConfig::kWebHost, AppConfig::kWebPort); });
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     }
 
     ~WebServer() {
@@ -264,7 +408,11 @@ public:
         video_raw_cv_.notify_all();
         svr.stop();
         if (encoder_thread.joinable()) encoder_thread.join();
+<<<<<<< HEAD
         if (server_thread.joinable())  server_thread.join();
+=======
+        if (server_thread.joinable()) server_thread.join();
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
     }
 
 private:
@@ -287,6 +435,7 @@ private:
 
     void VideoEncodeLoop() {
         uint64_t last_encoded_seq = 0;
+<<<<<<< HEAD
         std::vector<int> params = {
             cv::IMWRITE_JPEG_QUALITY, AppConfig::kVideoJpegQuality,
             cv::IMWRITE_JPEG_OPTIMIZE, 1
@@ -296,6 +445,20 @@ private:
             {
                 std::unique_lock<std::mutex> lk(video_raw_mtx_);
                 video_raw_cv_.wait_for(lk,
+=======
+        std::vector<int> encode_params = {
+            cv::IMWRITE_JPEG_QUALITY, AppConfig::kVideoJpegQuality,
+            cv::IMWRITE_JPEG_OPTIMIZE, 1
+        };
+
+        while (running_) {
+            cv::Mat frame;
+            uint64_t raw_seq = 0;
+            {
+                std::unique_lock<std::mutex> lk(video_raw_mtx_);
+                video_raw_cv_.wait_for(
+                    lk,
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                     std::chrono::milliseconds(1000 / std::max(1, AppConfig::kVideoStreamFps)),
                     [this, last_encoded_seq]() { return !running_ || latest_raw_seq_ != last_encoded_seq; });
                 if (!running_) break;
@@ -303,11 +466,21 @@ private:
                 latest_raw_frame_.copyTo(frame);
                 raw_seq = latest_raw_seq_;
             }
+<<<<<<< HEAD
             std::vector<uchar> jpeg;
             if (!cv::imencode(".jpg", frame, jpeg, params)) continue;
             {
                 std::lock_guard<std::mutex> lk(video_jpeg_mtx_);
                 latest_jpeg_     = std::make_shared<std::vector<uchar>>(std::move(jpeg));
+=======
+
+            std::vector<uchar> jpeg;
+            if (!cv::imencode(".jpg", frame, jpeg, encode_params)) continue;
+
+            {
+                std::lock_guard<std::mutex> lk(video_jpeg_mtx_);
+                latest_jpeg_ = std::make_shared<std::vector<uchar>>(std::move(jpeg));
+>>>>>>> 83a8c1a6782523d48e41809f60a14a65d90103d5
                 latest_jpeg_seq_ = raw_seq;
             }
             last_encoded_seq = raw_seq;
