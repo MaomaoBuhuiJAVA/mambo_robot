@@ -20,8 +20,17 @@ struct AppConfig {
     static constexpr const char* kEmotionPath = "./models/emotion-ferplus-8.onnx";
     static constexpr const char* kBaseImgDir = "./faces/";
 
-    // 串口配置
     static constexpr const char* kSerialPort = "/dev/ttyS7";
+    static constexpr const char* kWebHost = "0.0.0.0";
+    static constexpr int kWebPort = 8080;
+
+    // 摄像头配置
+    static constexpr int kCameraIndex      = 0;
+    static constexpr int kCameraWidth      = 640;
+    static constexpr int kCameraHeight     = 480;
+    static constexpr int kCameraTargetFps  = 30;
+    static constexpr int kVideoStreamFps   = 15;
+    static constexpr int kVideoJpegQuality = 80;
 
     static constexpr int kVoiceThreshold = 200;
     static constexpr int kSilenceThreshold = 200;

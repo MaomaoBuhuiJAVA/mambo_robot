@@ -4,12 +4,14 @@
 #include "vision_engine.hpp"
 #include "dialog_system.hpp"
 #include <opencv2/opencv.hpp>
+#include <algorithm>
 #include <thread>
 #include <mutex>
 #include <atomic>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <cstdio>
 
 int main() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -22,20 +24,30 @@ int main() {
     mambo::DialogSystem dialog(&serial);
     dialog.Start();
 
-    cv::VideoCapture cap(0);
+    // 摄像头初始化（使用配置常量）
+    cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
+    if (!cap.isOpened()) {
+        std::cerr << "[Error] 无法打开摄像头 index=" << mambo::AppConfig::kCameraIndex << std::endl;
+        curl_global_cleanup();
+        return 1;
+    }
+    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
     cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH,  mambo::AppConfig::kCameraWidth);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
+    cap.set(cv::CAP_PROP_FPS,          mambo::AppConfig::kCameraTargetFps);
 
     std::mutex data_mtx;
     cv::Rect   fast_box;
     bool       has_face = false;
     std::vector<mambo::ObjectResult> slow_objects;
     std::vector<mambo::FaceResult>   slow_faces;
+    int latest_frame_width  = mambo::AppConfig::kCameraWidth;
+    int latest_frame_height = mambo::AppConfig::kCameraHeight;
     std::atomic<bool> running(true);
     std::atomic<int>  det_fps(0);
 
-    // 视觉线程：每帧人脸检测，每15帧完整推理
+    // 视觉线程：每帧人脸检测 + 推送视频流，每15帧完整推理
     std::thread vision_thread([&]() {
         int frame_count = 0, cnt = 0;
         auto t0 = std::chrono::steady_clock::now();
@@ -44,6 +56,8 @@ int main() {
             cap >> frame;
             if (frame.empty()) continue;
             frame_count++;
+
+            web.PushVideoFrame(frame); // 异步编码，不阻塞
 
             auto boxes = vision.DetectFaceBoxes(frame);
 
@@ -56,6 +70,8 @@ int main() {
                 std::lock_guard<std::mutex> lk(data_mtx);
                 has_face = !boxes.empty();
                 fast_box = has_face ? boxes[0] : cv::Rect();
+                latest_frame_width  = frame.cols;
+                latest_frame_height = frame.rows;
                 if (frame_count % 15 == 0) {
                     slow_objects = objects;
                     slow_faces   = faces;
@@ -70,19 +86,23 @@ int main() {
     });
 
     // 主线程：推送数据 + 控制台打印
-    float smooth_cx = 320, smooth_cy = 240;
+    float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
+    float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
     auto last_print = std::chrono::steady_clock::now();
 
     while (true) {
         cv::Rect box; bool hf;
         std::vector<mambo::ObjectResult> objects;
         std::vector<mambo::FaceResult>   faces;
+        int frame_w, frame_h;
         {
             std::lock_guard<std::mutex> lk(data_mtx);
             box     = fast_box;
             hf      = has_face;
             objects = slow_objects;
             faces   = slow_faces;
+            frame_w = latest_frame_width;
+            frame_h = latest_frame_height;
         }
 
         mambo::ChatState state = dialog.GetState();
@@ -97,27 +117,77 @@ int main() {
             dialog.SetCurrentEmotion(emo);
         }
 
-        // 推送给浏览器
-        float nx = -(smooth_cx - 320.0f) / 320.0f;  // 负号修正镜像
-        float ny =  (smooth_cy - 240.0f) / 240.0f;
+        // 推送眼睛UI（用实际分辨率归一化）
+        float half_w = std::max(1.0f, frame_w / 2.0f);
+        float half_h = std::max(1.0f, frame_h / 2.0f);
+        float nx = -(smooth_cx - half_w) / half_w;
+        float ny =  (smooth_cy - half_h) / half_h;
         web.PushEyeData(nx, ny, emo);
 
-        // 控制台每秒打印
+        // 轮询串口接收 ESP32 上报
+        serial.Poll();
+
+        // 每秒构建 status JSON + 控制台打印
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_print).count() >= 1000) {
             last_print = now;
-            std::string ss = (state == mambo::ChatState::kWaiting  ? "等待" :
-                              state == mambo::ChatState::kListening ? "聆听" :
-                              state == mambo::ChatState::kThinking  ? "思考" : "说话");
-            std::cout << "\n[FPS:" << det_fps << " 状态:" << ss << "]";
-            if (faces.empty()) std::cout << "  人脸:无";
-            else for (const auto& f : faces)
-                std::cout << "  [" << f.name << "|" << f.emotion
-                          << "|" << std::fixed << std::setprecision(2) << f.score << "]";
+            std::string ss = (state == mambo::ChatState::kWaiting  ? "waiting"   :
+                              state == mambo::ChatState::kListening ? "listening" :
+                              state == mambo::ChatState::kThinking  ? "thinking"  : "speaking");
+
+            // 构建 status JSON
+            std::string json = "{";
+            json += "\"fps\":" + std::to_string(det_fps.load());
+            json += ",\"state\":\"" + ss + "\"";
+            if (!faces.empty()) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), ",\"face\":{\"name\":\"%s\",\"emotion\":\"%s\",\"score\":%.2f}",
+                         faces[0].name.c_str(), faces[0].emotion.c_str(), faces[0].score);
+                json += buf;
+            } else {
+                json += ",\"face\":null";
+            }
+            json += ",\"objects\":[";
+            for (size_t i = 0; i < objects.size(); i++) {
+                if (i) json += ",";
+                char buf[64];
+                snprintf(buf, sizeof(buf), "{\"label\":\"%s\",\"prob\":%.2f}",
+                         mambo::kClassNames[objects[i].label].c_str(), objects[i].prob);
+                json += buf;
+            }
+            json += "]";
+            std::string espStatus = serial.GetEsp32Status();
+            if (!espStatus.empty()) json += ",\"esp32\":{" + espStatus + "}";
+            json += "}";
+            web.PushStatus(json);
+
+            // 控制台打印 ── 香橙派
+            std::cout << "\n┌─ 视觉 FPS:" << det_fps << "  状态:" << ss;
+            if (!faces.empty())
+                std::cout << "  人脸:[" << faces[0].name << "|" << faces[0].emotion
+                          << "|" << std::fixed << std::setprecision(2) << faces[0].score << "]";
+            else
+                std::cout << "  人脸:无";
             if (!objects.empty()) {
                 std::cout << "  物品:";
                 for (const auto& o : objects)
                     std::cout << mambo::kClassNames[o.label] << "(" << (int)(o.prob*100) << "%) ";
+            }
+
+            // 控制台打印 ── ESP32
+            auto esp = serial.GetEsp32Data();
+            if (esp.valid) {
+                std::cout << std::fixed << std::setprecision(2);
+                std::cout << "\n└─ ESP32  "
+                          << "电压:" << esp.v << "V  "
+                          << "电流:" << esp.c * 1000 << "mA  "
+                          << "加速度:[" << esp.ax << "," << esp.ay << "," << esp.az << "]g  "
+                          << "陀螺:[" << std::setprecision(1) << esp.gx << "," << esp.gy << "," << esp.gz << "]°/s  "
+                          << "跌落:" << (esp.cliff ? "⚠ YES" : "no") << "  "
+                          << "雷达:" << (esp.radar ? "YES" : "no") << "  "
+                          << "动作:" << esp.act;
+            } else {
+                std::cout << "\n└─ ESP32  等待连接...";
             }
             std::cout << std::flush;
         }
