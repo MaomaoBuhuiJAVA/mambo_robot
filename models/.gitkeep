@@ -1,0 +1,6 @@
+# 模型文件目录
+# 请将以下模型文件放置在此目录：
+# - yolov5.nb
+# - face_detection_yunet_2023mar.onnx
+# - face_recognition_sface_2021dec.onnx
+# - emotion-ferplus-8.onnx

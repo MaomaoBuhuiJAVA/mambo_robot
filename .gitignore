@@ -1,0 +1,34 @@
+# ai-sdk 嵌套仓库（只是参考，不上传）
+ai-sdk/
+
+# 编译产物
+build/
+*.o
+*.a
+*.so
+
+# 模型文件（体积大，不上传）
+models/*.nb
+models/*.onnx
+
+# 人脸数据（隐私）
+faces/*.jpg
+faces/*.png
+faces/*/
+
+# Node.js
+eyes-ui/node_modules/
+eyes-ui/dist/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 第三方大文件（只保留源码）
+third_party/*.so
+third_party/*.a

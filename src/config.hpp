@@ -1,0 +1,52 @@
+#pragma once
+#include <string>
+#include <vector>
+#include <opencv2/opencv.hpp>
+
+namespace mambo {
+struct AppConfig {
+    static constexpr const char* kAlsaRecDevice = "plughw:2,0";
+    static constexpr const char* kAlsaPlayDevice = "plughw:3,0";
+    
+    // API Keys
+    static constexpr const char* kBaiduApiKey = "mOEMA8FfryEAdeEsJ5cIMH0D";
+    static constexpr const char* kBaiduSecretKey = "H5JqN86FH681HLEOY2cfBbD8m22WVBBd";
+    static constexpr const char* kDeepseekApiKey = "sk-a10bdd9276944b6685c6cdaeba7e60b5";
+
+    // 模型与资源路径 (相对路径，方便打包)
+    static constexpr const char* kYoloModelPath = "./models/yolov5.nb";
+    static constexpr const char* kYunetPath = "./models/face_detection_yunet_2023mar.onnx";
+    static constexpr const char* kSfacePath = "./models/face_recognition_sface_2021dec.onnx";
+    static constexpr const char* kEmotionPath = "./models/emotion-ferplus-8.onnx";
+    static constexpr const char* kBaseImgDir = "./faces/";
+
+    // 串口配置
+    static constexpr const char* kSerialPort = "/dev/ttyS7";
+
+    static constexpr int kVoiceThreshold = 200;
+    static constexpr int kSilenceThreshold = 200;
+    static constexpr int kSilenceLimitMs = 1100;
+    static constexpr int kInputSize = 640;
+};
+
+const std::vector<std::string> kEmotionNames = {"ZhongXing", "KaiXin", "JingYa", "NanGuo", "ShengQi", "YanWu", "KongJu", "MiMang"};
+const std::vector<std::string> kClassNames = {
+    "Ren","ZiXingChe","QiChe","MoTuoChe","FeiJi","GongJiaoChe","HuoChe","KaChe","Chuan","HongLvDeng",
+    "XiaoFangShuan","TingZhiPai","TingCheBiao","ChangYi","Niao","Mao","Gou","Ma","Yang","Niu",
+    "DaXiang","Xiong","BanMa","ChangJingLu","BeiBao","YuSan","ShouTiBao","LingDai","XingLiXiang","FeiPan",
+    "HuaXueBan","DanBan","YunDongQiu","FengZheng","BangQiuBang","ShouTao","HuaBan","ChongLangBan","WangQiuPai","PingZi",
+    "GaoJiaoBei","BeiZi","ChaZi","Dao","ShaoZi","Wan","XiangJiao","PingGuo","SanMingZhi","JuZi",
+    "XiLanHua","HuLuoBo","ReGou","PiSa","TianTianQuan","DanGao","YiZi","ShaFa","PenZai","Chuang",
+    "CanZhuo","MaTong","DianShi","BiJiBen","ShuBiao","YaoKongQi","JianPan","ShouJi","WeiBoLu","KaoXiang",
+    "MianBaoJi","ShuiCao","BingXiang","Shu","ZhongBiao","HuaPing","JianDao","TaiDiXiong","ChuiFengJi","YaShua"
+};
+enum class ChatState { kWaiting, kListening, kThinking, kSpeaking };
+struct ObjectResult {
+    cv::Rect_<float> rect; int label; float prob;
+    ObjectResult(cv::Rect_<float> r, int l, float p) : rect(r), label(l), prob(p) {}
+};
+struct FaceResult {
+    cv::Rect box; std::string name; double score; std::string emotion;
+    FaceResult(cv::Rect b, std::string n, double s, std::string e) : box(b), name(n), score(s), emotion(e) {}
+};
+}
