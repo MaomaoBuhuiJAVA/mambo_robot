@@ -23,6 +23,7 @@ unsigned long last_cmd_time  = 0;
 const unsigned long CMD_TIMEOUT = 300;
 
 bool   radar_triggered = false;
+bool   fall_alert      = false;  // 跌落警报（发送一次后清除）
 int    motor_speed     = 220;
 String current_action  = "stop";
 
@@ -146,6 +147,16 @@ void loop() {
     if (!isSafe() && current_action != "stop" && current_action != "backward") {
         setMotor(0, 0, 0, 0, 0);
         current_action = "emergency_stop";
+        fall_alert = true;  // 触发警报
+    }
+
+    // 陀螺仪跌落检测（任意轴角速度超过200°/s视为跌落/碰撞）
+    mpuRead();
+    float gx_d = gyroDps(gx), gy_d = gyroDps(gy), gz_d = gyroDps(gz);
+    if (abs(gx_d) > 200 || abs(gy_d) > 200 || abs(gz_d) > 200) {
+        setMotor(0, 0, 0, 0, 0);
+        current_action = "emergency_stop";
+        fall_alert = true;
     }
 
     // 接收香橙派指令
@@ -162,23 +173,30 @@ void loop() {
     if (now - last_send_time > 400) {
         last_send_time = now;
 
-        // 读传感器
+        // 读传感器（陀螺仪已在安全监控中读取，这里补读最新值）
         mpuRead();
         float v = ina.getBusVoltage();
-        float c = abs(ina.getCurrent_mA()) / 1000.0f;
+        float shunt_mv = ina.getShuntVoltage_mV();
+        float c = abs(shunt_mv) / (R_SHUNT * 1000.0f);
 
-        // 转换
-        float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g  = accelG(az);
-        float gx_d  = gyroDps(gx), gy_d  = gyroDps(gy), gz_d  = gyroDps(gz);
+        float ax_g = accelG(ax),   ay_g = accelG(ay),   az_g = accelG(az);
+        float gx_d = gyroDps(gx),  gy_d = gyroDps(gy),  gz_d = gyroDps(gz);
         bool  cliff = !isSafe();
         bool  radar = radar_triggered;
+        bool  alert = fall_alert;
         radar_triggered = false;
+        fall_alert      = false;
+
+        // 跌落/碰撞时额外发一条警报行给香橙派（香橙派解析后触发TTS）
+        if (alert) {
+            Serial1.println("{\"alert\":\"fall\"}");
+        }
 
         // USB串口调试打印（人类可读）
-        Serial.printf("V=%.2fV  I=%.1fmA  |  "
+        Serial.printf("V=%.2fV  I=%.1fmA  Shunt=%.3fmV  |  "
                       "A=[%.2f,%.2f,%.2f]g  G=[%.1f,%.1f,%.1f]dps  |  "
                       "Cliff=%s  Radar=%s  Act=%s\n",
-                      v, c * 1000,
+                      v, c * 1000, shunt_mv,
                       ax_g, ay_g, az_g,
                       gx_d, gy_d, gz_d,
                       cliff ? "YES" : "no",
@@ -187,15 +205,16 @@ void loop() {
 
         // Serial1 发给香橙派（JSON）
         // {"v":3.85,"c":0.1,"ax":0.01,"ay":0.02,"az":1.00,"gx":0.1,"gy":0.1,"gz":0.0,"cliff":0,"radar":0,"act":"stop"}
-        Serial1.printf("{\"v\":%.2f,\"c\":%.1f,"
+        Serial1.printf("{\"v\":%.2f,\"c\":%.4f,"
                        "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
                        "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
-                       "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\"}\n",
+                       "\"cliff\":%d,\"radar\":%d,\"alert\":%d,\"act\":\"%s\"}\n",
                        v, c,
                        ax_g, ay_g, az_g,
                        gx_d, gy_d, gz_d,
                        cliff ? 1 : 0,
                        radar ? 1 : 0,
+                       alert ? 1 : 0,
                        current_action.c_str());
     }
 }

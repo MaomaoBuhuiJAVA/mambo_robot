@@ -44,12 +44,12 @@ private:
 public:
     // ESP32 上报的状态（Poll() 解析后更新）
     struct Esp32Data {
-        float v = 0, c = 0;                      // 电压(V), 电流(A)
-        float ax = 0, ay = 0, az = 0;            // 加速度(g)
-        float gx = 0, gy = 0, gz = 0;            // 角速度(dps)
-        bool  cliff = false, radar = false;       // 跌落/雷达
-        std::string act = "stop";                 // 当前动作
-        bool valid = false;                       // 是否收到过数据
+        float v = 0, c = 0;
+        float ax = 0, ay = 0, az = 0;
+        float gx = 0, gy = 0, gz = 0;
+        bool  cliff = false, radar = false, alert = false;
+        std::string act = "stop";
+        bool valid = false;
     };
 
 private:
@@ -124,11 +124,19 @@ public:
                     esp_data_.gz    = jsonFloat(line, "gz");
                     esp_data_.cliff = jsonInt(line, "cliff") != 0;
                     esp_data_.radar = jsonInt(line, "radar") != 0;
+                    esp_data_.alert = esp_data_.alert || (jsonInt(line, "alert") != 0); // 累积，消费后清
                     esp_data_.act   = jsonStr(line, "act");
                     esp_data_.valid = true;
                 } catch (...) {}
             }
         }
+    }
+
+    // 消费跌落警报（读一次后清除，避免重复触发）
+    bool ConsumeAlert() {
+        std::lock_guard<std::mutex> lk(rx_mtx_);
+        if (esp_data_.alert) { esp_data_.alert = false; return true; }
+        return false;
     }
 
     Esp32Data GetEsp32Data() {
