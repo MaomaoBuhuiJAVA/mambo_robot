@@ -172,19 +172,17 @@ void loop() {
             current_action = "stop";
             cliff_back_until = 0;
         }
-    } else if (!isSafe()) {
-        // 首次触发：启动后退计时
+    } else if (!isSafe() && !cliff_alerted) {
+        // 首次触发（未报警过）：启动后退计时
         cliff_back_until = now_ms + CLIFF_BACK_MS;
+        cliff_alerted = true;
+        pending_alert = "cliff";
         setMotor(0, 1, 0, 1, motor_speed);
         current_action = "emergency_back";
         last_cmd_time  = now_ms;
-        if (!cliff_alerted) {
-            cliff_alerted = true;
-            pending_alert = "cliff";
-        }
     }
-    if (isSafe() && cliff_back_until == 0) {
-        cliff_alerted = false; // 安全且无后退中，重置警报标志
+    if (isSafe()) {
+        cliff_alerted = false; // 真正离开悬崖才重置
     }
 
     // 跌落检测：Z轴加速度接近0（自由落体），停车 + 发警报（只报一次）
