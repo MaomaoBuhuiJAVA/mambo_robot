@@ -24,6 +24,20 @@ int main() {
     mambo::DialogSystem dialog(&serial);
     dialog.Start();
 
+    // 警报 TTS 播放（异步，不阻塞主循环）
+    auto playAlert = [](const std::string& text, const std::string& token) {
+        std::thread([text, token]() {
+            CURL* curl = curl_easy_init();
+            char* esc = curl_easy_escape(curl, text.c_str(), text.length());
+            std::string url = "https://tsn.baidu.com/text2audio?tex=" + std::string(esc)
+                            + "&lan=zh&cuid=op4pro&ctp=1&tok=" + token
+                            + "&per=4&spd=5&pit=6&vol=3";
+            curl_free(esc); curl_easy_cleanup(curl);
+            system(("wget -q -O /tmp/alert.mp3 \"" + url + "\" && mpg123 -q -a " +
+                    std::string(mambo::AppConfig::kAlsaPlayDevice) + " /tmp/alert.mp3 >/dev/null 2>&1").c_str());
+        }).detach();
+    };
+
     // 摄像头初始化
     cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
     if (!cap.isOpened()) {
@@ -167,6 +181,13 @@ int main() {
         // 轮询串口接收 ESP32 上报
         serial.Poll();
 
+        // 消费警报，触发语音
+        std::string alert = serial.ConsumeAlert();
+        if (!alert.empty()) {
+            std::string msg = (alert == "cliff") ? "啊！前面是悬崖，星宝~" : "啊！星宝要跌落了！";
+            playAlert(msg, dialog.GetBaiduToken());
+        }
+
         // 每秒构建 status JSON + 控制台打印
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_print).count() >= 1000) {
@@ -220,10 +241,11 @@ int main() {
                 std::cout << "\n└─ ESP32  "
                           << "电压:" << esp.v << "V  "
                           << "电流:" << esp.c * 1000 << "mA  "
-                          << "加速度:[" << esp.ax << "," << esp.ay << "," << esp.az << "]g  "
-                          << "陀螺:[" << std::setprecision(1) << esp.gx << "," << esp.gy << "," << esp.gz << "]°/s  "
-                          << "跌落:" << (esp.cliff ? "⚠ YES" : "no") << "  "
-                          << "雷达:" << (esp.radar ? "YES" : "no") << "  "
+                          << "加速度 X:" << esp.ax << " Y:" << esp.ay << " Z:" << esp.az << " g  "
+                          << "陀螺 X:" << std::setprecision(1) << esp.gx
+                          << " Y:" << esp.gy << " Z:" << esp.gz << " °/s  "
+                          << "悬崖:" << (esp.cliff ? "⚠ 检测到" : "安全") << "  "
+                          << "雷达:" << (esp.radar ? "触发" : "无") << "  "
                           << "动作:" << esp.act;
             } else {
                 std::cout << "\n└─ ESP32  等待连接...";

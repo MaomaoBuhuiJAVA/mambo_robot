@@ -26,6 +26,22 @@ bool   radar_triggered = false;
 int    motor_speed     = 220;
 String current_action  = "stop";
 
+// 警报冷却
+unsigned long cliff_alert_time = 0;
+unsigned long fall_alert_time  = 0;
+const unsigned long ALERT_COOLDOWN = 3000; // 3秒冷却
+
+// 待发警报（下次上报时带上）
+String pending_alert = "";
+
+// 警报只触发一次的标志
+bool cliff_alerted = false;
+bool fall_alerted  = false;
+
+// 悬崖后退结束时间（0表示未激活）
+unsigned long cliff_back_until = 0;
+const unsigned long CLIFF_BACK_MS = 1000; // 后退持续时间
+
 // MPU6050 原始数据
 int16_t ax, ay, az, gx, gy, gz;
 
@@ -134,19 +150,59 @@ void setup() {
 
 // ================= loop =================
 void loop() {
-    // 超时自动停止
-    if (current_action != "stop" && current_action != "blocked") {
+    // 超时自动停止（后退保护期间不干预）
+    if (current_action != "stop" && current_action != "blocked" && cliff_back_until == 0) {
         if (millis() - last_cmd_time > CMD_TIMEOUT) {
             setMotor(0, 0, 0, 0, 0);
             current_action = "stop";
         }
     }
 
-    // 实时安全监控
-    if (!isSafe() && current_action != "stop" && current_action != "backward") {
-        setMotor(0, 0, 0, 0, 0);
-        current_action = "emergency_stop";
+    // 悬崖检测：触发一次后退固定时长，不受悬崖状态持续影响
+    unsigned long now_ms = millis();
+    if (cliff_back_until > 0) {
+        // 后退进行中
+        if (now_ms < cliff_back_until) {
+            setMotor(0, 1, 0, 1, motor_speed);
+            current_action = "emergency_back";
+            last_cmd_time  = now_ms; // 防止超时停止
+        } else {
+            // 后退结束，停车
+            setMotor(0, 0, 0, 0, 0);
+            current_action = "stop";
+            cliff_back_until = 0;
+        }
+    } else if (!isSafe()) {
+        // 首次触发：启动后退计时
+        cliff_back_until = now_ms + CLIFF_BACK_MS;
+        setMotor(0, 1, 0, 1, motor_speed);
+        current_action = "emergency_back";
+        last_cmd_time  = now_ms;
+        if (!cliff_alerted) {
+            cliff_alerted = true;
+            pending_alert = "cliff";
+        }
     }
+    if (isSafe() && cliff_back_until == 0) {
+        cliff_alerted = false; // 安全且无后退中，重置警报标志
+    }
+
+    // 跌落检测：Z轴加速度接近0（自由落体），停车 + 发警报（只报一次）
+    mpuRead();
+    float az_g = accelG(az);
+    if (abs(az_g) < 0.2f) {
+        if (current_action != "stop") {
+            setMotor(0, 0, 0, 0, 0);
+            current_action = "stop";
+        }
+        if (!fall_alerted) {
+            fall_alerted = true;
+            pending_alert = "fall";
+        }
+    } else {
+        fall_alerted = false; // 恢复正常后重置
+    }
+
 
     // 接收香橙派指令
     if (Serial1.available() > 0) {
@@ -162,13 +218,12 @@ void loop() {
     if (now - last_send_time > 400) {
         last_send_time = now;
 
-        // 读传感器
-        mpuRead();
+        // 读传感器（跌落检测已在上面读过，这里补读电压电流）
         float v = ina.getBusVoltage();
         float c = abs(ina.getCurrent_mA()) / 1000.0f;
 
-        // 转换
-        float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g  = accelG(az);
+        // 转换（ax/ay/az/gx/gy/gz 已由上面 mpuRead() 更新）
+        float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g2 = accelG(az);
         float gx_d  = gyroDps(gx), gy_d  = gyroDps(gy), gz_d  = gyroDps(gz);
         bool  cliff = !isSafe();
         bool  radar = radar_triggered;
@@ -179,23 +234,24 @@ void loop() {
                       "A=[%.2f,%.2f,%.2f]g  G=[%.1f,%.1f,%.1f]dps  |  "
                       "Cliff=%s  Radar=%s  Act=%s\n",
                       v, c * 1000,
-                      ax_g, ay_g, az_g,
+                      ax_g, ay_g, az_g2,
                       gx_d, gy_d, gz_d,
                       cliff ? "YES" : "no",
                       radar ? "YES" : "no",
                       current_action.c_str());
 
         // Serial1 发给香橙派（JSON）
-        // {"v":3.85,"c":0.1,"ax":0.01,"ay":0.02,"az":1.00,"gx":0.1,"gy":0.1,"gz":0.0,"cliff":0,"radar":0,"act":"stop"}
         Serial1.printf("{\"v\":%.2f,\"c\":%.1f,"
                        "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
                        "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
-                       "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\"}\n",
+                       "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\",\"alert\":\"%s\"}\n",
                        v, c,
-                       ax_g, ay_g, az_g,
+                       ax_g, ay_g, az_g2,
                        gx_d, gy_d, gz_d,
                        cliff ? 1 : 0,
                        radar ? 1 : 0,
-                       current_action.c_str());
+                       current_action.c_str(),
+                       pending_alert.c_str());
+        pending_alert = ""; // 发完清空
     }
 }

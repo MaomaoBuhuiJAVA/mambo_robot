@@ -6,6 +6,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 using json = nlohmann::json;
 
@@ -14,17 +15,19 @@ class DialogSystem {
 public:
     DialogSystem(SerialManager* serial) : serial_(serial), chat_state_(ChatState::kWaiting) {
         RefreshBaiduToken();
-        // 强制大模型输出 JSON，绑定动作
-        chat_history_.push_back({{"role", "system"}, {"content", 
-            "你是一个叫曼波的桌面机器人。口头禅'曼波~'。回答简短。你可以控制底盘移动。"
+        chat_history_.push_back({{"role", "system"}, {"content",
+            "你是一个叫星宝的桌面机器人，专门陪伴孤独症小朋友。说话温柔、简短、有耐心，口头禅'星宝~'。你可以控制底盘移动。"
             "你必须且只能返回合法的JSON格式，绝对不要包含Markdown标记(如```json)。"
-            "格式：{\"reply\": \"你的回复话语\", \"action\": \"forward/backward/left/right/stop\"}"
+            "格式：{\"reply\": \"你的回复话语\", \"action\": \"forward/backward/left/right/stop\", \"duration\": 秒数}"
+            "duration表示动作持续秒数(0=不动，转向默认3秒，前进后退默认2秒，最大10秒)。"
+            "示例：用户说'向左转'→{\"reply\":\"好的星宝~\",\"action\":\"left\",\"duration\":3}"
         }});
     }
     void Start() { worker_thread_ = std::thread(&DialogSystem::AudioLoop, this); }
     ~DialogSystem() { if (worker_thread_.joinable()) worker_thread_.join(); }
     ChatState GetState() const { return chat_state_.load(); }
     void SetCurrentEmotion(const std::string& e) { std::lock_guard<std::mutex> lk(mtx_); current_emotion_ = e; }
+    std::string GetBaiduToken() const { return baidu_token_; }
 
 private:
     SerialManager* serial_;
@@ -98,10 +101,22 @@ private:
 
             auto ai_json = json::parse(ai_content);
             std::string reply_text = ai_json["reply"];
-            std::string action = ai_json["action"];
+            std::string action = ai_json.value("action", "stop");
+            float duration = ai_json.value("duration", 0.0f);
+            duration = std::min(duration, 10.0f);
 
-            // 1. 发送动作给 ESP32
-            if (serial_) serial_->SendCommand(action);
+            // 持续发送动作心跳直到 duration 到期（ESP32 超时 300ms，每 150ms 发一次）
+            if (serial_ && action != "stop" && duration > 0) {
+                std::thread([this, action, duration]() {
+                    auto end_t = std::chrono::steady_clock::now()
+                                 + std::chrono::milliseconds((int)(duration * 1000));
+                    while (std::chrono::steady_clock::now() < end_t) {
+                        serial_->SendCommand(action);
+                        usleep(150000);
+                    }
+                    serial_->SendCommand("stop");
+                }).detach();
+            }
 
             // 2. 播放语音
             chat_history_.push_back({{"role", "assistant"}, {"content", ai_content}});
@@ -109,7 +124,7 @@ private:
             
             CURL* curl = curl_easy_init();
             char* escaped_text = curl_easy_escape(curl, reply_text.c_str(), reply_text.length());
-            std::string tts_url = "https://tsn.baidu.com/text2audio?tex=" + std::string(escaped_text) + "&lan=zh&cuid=op4pro&ctp=1&tok=" + baidu_token_ + "&per=4&spd=5&pit=6&vol=5";
+            std::string tts_url = "https://tsn.baidu.com/text2audio?tex=" + std::string(escaped_text) + "&lan=zh&cuid=op4pro&ctp=1&tok=" + baidu_token_ + "&per=4&spd=5&pit=6&vol=3";
             curl_free(escaped_text); curl_easy_cleanup(curl);
             
             // 阻塞播放，播放完恢复 Waiting

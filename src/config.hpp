@@ -36,7 +36,7 @@ struct AppConfig {
     static constexpr int kStreamHeight     = 270; // 流编码高度
 
     static constexpr int kVoiceThreshold   = 200;
-    static constexpr int kSilenceThreshold = 200;
+    static constexpr int kSilenceThreshold = 400;
     static constexpr int kSilenceLimitMs   = 500;
     static constexpr int kInputSize        = 640;
 };

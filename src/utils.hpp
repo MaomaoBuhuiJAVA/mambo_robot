@@ -47,7 +47,8 @@ public:
         float v = 0, c = 0;
         float ax = 0, ay = 0, az = 0;
         float gx = 0, gy = 0, gz = 0;
-        bool  cliff = false, radar = false, alert = false;
+        bool  cliff = false, radar = false;
+        std::string alert;   // "cliff" / "fall" / ""
         std::string act = "stop";
         bool valid = false;
     };
@@ -124,19 +125,28 @@ public:
                     esp_data_.gz    = jsonFloat(line, "gz");
                     esp_data_.cliff = jsonInt(line, "cliff") != 0;
                     esp_data_.radar = jsonInt(line, "radar") != 0;
-                    esp_data_.alert = esp_data_.alert || (jsonInt(line, "alert") != 0); // 累积，消费后清
-                    esp_data_.act   = jsonStr(line, "act");
+                    // 累积 alert，消费后清除
+                    if (esp_data_.alert.empty()) {
+                        std::string a = jsonStr(line, "alert");
+                        if (!a.empty()) esp_data_.alert = a;
+                    }
+                    esp_data_.act = jsonStr(line, "act");
                     esp_data_.valid = true;
                 } catch (...) {}
             }
         }
     }
 
-    // 消费跌落警报（读一次后清除，避免重复触发）
-    bool ConsumeAlert() {
+    // 消费警报（读一次后清除）
+    // 返回 "cliff"、"fall" 或 ""
+    std::string ConsumeAlert() {
         std::lock_guard<std::mutex> lk(rx_mtx_);
-        if (esp_data_.alert) { esp_data_.alert = false; return true; }
-        return false;
+        if (!esp_data_.alert.empty()) {
+            std::string a = esp_data_.alert;
+            esp_data_.alert.clear();
+            return a;
+        }
+        return "";
     }
 
     Esp32Data GetEsp32Data() {
