@@ -15,7 +15,8 @@ public:
         userp->append((char*)contents, size * nmemb);
         return size * nmemb;
     }
-    static std::string Post(const std::string& url, const std::string& data, const std::vector<std::string>& headers) {
+    static std::string Post(const std::string& url, const std::string& data,
+                            const std::vector<std::string>& headers, long timeout_sec = 15) {
         CURL* curl = curl_easy_init();
         if (!curl) return "";
         std::string response;
@@ -28,7 +29,11 @@ public:
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_perform(curl);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec);
+        CURLcode res = curl_easy_perform(curl);
+        if (res != CURLE_OK)
+            std::cerr << "[HTTP Error] " << url.substr(0, 50) << " -> " << curl_easy_strerror(res) << "\n";
         curl_slist_free_all(chunk);
         curl_easy_cleanup(curl);
         return response;

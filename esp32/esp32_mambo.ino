@@ -185,20 +185,40 @@ void loop() {
         cliff_alerted = false; // 真正离开悬崖才重置
     }
 
-    // 跌落检测：Z轴加速度接近0（自由落体），停车 + 发警报（只报一次）
+    // 读 MPU6050
     mpuRead();
-    float az_g = accelG(az);
-    if (abs(az_g) < 0.2f) {
+    float ax_g = accelG(ax), ay_g2 = accelG(ay), az_g = accelG(az);
+    float gx_d = gyroDps(gx), gy_d = gyroDps(gy), gz_d = gyroDps(gz);
+
+    // 晕眩检测（优先于跌落）：陀螺仪任意轴 > 50°/s 持续 200ms
+    static unsigned long dizzy_start = 0;
+    static bool dizzy_alerted = false;
+    float gyro_max = max(abs(gx_d), max(abs(gy_d), abs(gz_d)));
+    if (gyro_max > 50.0f) {
+        if (dizzy_start == 0) dizzy_start = millis();
+        if (!dizzy_alerted && millis() - dizzy_start > 200) {
+            dizzy_alerted = true;
+            if (pending_alert.isEmpty()) pending_alert = "dizzy";
+        }
+    } else {
+        dizzy_start = 0;
+        dizzy_alerted = false;
+    }
+
+    // 跌落检测：加速度合力 < 0.3g（真正自由落体），且当前没有晕眩
+    // 用合力而非单轴，避免晃动时 Z 轴偶尔接近 0 误触发
+    float accel_total = sqrt(ax_g * ax_g + ay_g2 * ay_g2 + az_g * az_g);
+    if (accel_total < 0.3f && !dizzy_alerted) {
         if (current_action != "stop") {
             setMotor(0, 0, 0, 0, 0);
             current_action = "stop";
         }
         if (!fall_alerted) {
             fall_alerted = true;
-            pending_alert = "fall";
+            if (pending_alert.isEmpty()) pending_alert = "fall";
         }
     } else {
-        fall_alerted = false; // 恢复正常后重置
+        fall_alerted = false;
     }
 
 
@@ -216,13 +236,9 @@ void loop() {
     if (now - last_send_time > 400) {
         last_send_time = now;
 
-        // 读传感器（跌落检测已在上面读过，这里补读电压电流）
+        // 读传感器（mpuRead 已在上面调用，ax/ay/az/gx/gy/gz 已更新）
         float v = ina.getBusVoltage();
         float c = abs(ina.getCurrent_mA()) / 1000.0f;
-
-        // 转换（ax/ay/az/gx/gy/gz 已由上面 mpuRead() 更新）
-        float ax_g  = accelG(ax),  ay_g  = accelG(ay),  az_g2 = accelG(az);
-        float gx_d  = gyroDps(gx), gy_d  = gyroDps(gy), gz_d  = gyroDps(gz);
         bool  cliff = !isSafe();
         bool  radar = radar_triggered;
         radar_triggered = false;
@@ -232,7 +248,7 @@ void loop() {
                       "A=[%.2f,%.2f,%.2f]g  G=[%.1f,%.1f,%.1f]dps  |  "
                       "Cliff=%s  Radar=%s  Act=%s\n",
                       v, c * 1000,
-                      ax_g, ay_g, az_g2,
+                      ax_g, ay_g2, az_g,
                       gx_d, gy_d, gz_d,
                       cliff ? "YES" : "no",
                       radar ? "YES" : "no",
@@ -244,7 +260,7 @@ void loop() {
                        "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
                        "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\",\"alert\":\"%s\"}\n",
                        v, c,
-                       ax_g, ay_g, az_g2,
+                       ax_g, ay_g2, az_g,
                        gx_d, gy_d, gz_d,
                        cliff ? 1 : 0,
                        radar ? 1 : 0,

@@ -26,8 +26,9 @@ class WebServer {
     // /eyes SSE（眼睛UI）
     std::mutex eye_mtx_;
     std::condition_variable eye_cv_;
-    std::string eye_data_ = "{\"x\":0,\"y\":0,\"emotion\":\"neutral\"}";
-    uint64_t    eye_seq_  = 0;
+    std::string eye_data_    = "{\"x\":0,\"y\":0,\"emotion\":\"neutral\"}";
+    std::string eye_emotion_ = "ZhongXing";  // 当前星宝情绪，只由 LLM 更新
+    uint64_t    eye_seq_     = 0;
 
     // /status SSE（app状态）
     std::mutex status_mtx_;
@@ -50,12 +51,26 @@ class WebServer {
 public:
     // ── 数据推送接口 ─────────────────────────────────────────────
 
+    // 推送坐标+情绪（LLM 调用）
     void PushEyeData(float nx, float ny, const std::string& emotion) {
+        {
+            std::lock_guard<std::mutex> lk(eye_mtx_);
+            eye_emotion_ = emotion;
+            eye_data_ = "{\"x\":" + std::to_string(nx)
+                      + ",\"y\":" + std::to_string(ny)
+                      + ",\"emotion\":\"" + emotion + "\"}";
+            ++eye_seq_;
+        }
+        eye_cv_.notify_all();
+    }
+
+    // 只推送坐标，情绪保持不变（视觉线程调用）
+    void PushEyePos(float nx, float ny) {
         {
             std::lock_guard<std::mutex> lk(eye_mtx_);
             eye_data_ = "{\"x\":" + std::to_string(nx)
                       + ",\"y\":" + std::to_string(ny)
-                      + ",\"emotion\":\"" + emotion + "\"}";
+                      + ",\"emotion\":\"" + eye_emotion_ + "\"}";
             ++eye_seq_;
         }
         eye_cv_.notify_all();

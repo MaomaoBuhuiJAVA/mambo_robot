@@ -1,6 +1,6 @@
 export type EmotionState =
   | "neutral" | "happy" | "sad" | "angry" | "surprised"
-  | "fearful" | "disgusted" | "confused" | "thinking" | "listening";
+  | "fearful" | "disgusted" | "confused" | "thinking" | "listening" | "dizzy";
 
 export interface EyeConfig {
   path: string;
@@ -31,7 +31,7 @@ const pathSquint   = "M20,40 L80,40 C95,40 100,45 100,55 L100,85 C100,95 95,100 
 export const emotionMap: Record<string, EmotionState> = {
   ZhongXing: "neutral", KaiXin: "happy",   NanGuo: "sad",
   ShengQi:   "angry",   JingYa: "surprised", KongJu: "fearful",
-  YanWu:     "disgusted", MiMang: "confused",
+  YanWu:     "disgusted", MiMang: "confused", Dizzy: "dizzy",
 };
 
 export const emotions: Record<EmotionState, EmotionConfig> = {
@@ -84,5 +84,10 @@ export const emotions: Record<EmotionState, EmotionConfig> = {
     id: "listening",
     leftEye:  { path: pathNeutral, scaleX: 1, scaleY: 1.1, rotate: 0, x: 0, y: 0, color: "#00ffcc" },
     rightEye: { path: pathNeutral, scaleX: 1, scaleY: 1.1, rotate: 0, x: 0, y: 0, color: "#00ffcc" },
+  },
+  dizzy: {
+    id: "dizzy",
+    leftEye:  { path: pathSurprised, scaleX: 0.8, scaleY: 0.8, rotate: 0, x: 0, y: 0, color: "#ff88ff" },
+    rightEye: { path: pathSurprised, scaleX: 0.8, scaleY: 0.8, rotate: 0, x: 0, y: 0, color: "#ff88ff" },
   },
 };

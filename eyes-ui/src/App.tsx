@@ -90,8 +90,8 @@ export default function App() {
 
       {/* 眼睛 */}
       <div style={{ display: "flex", gap: 80, position: "relative", zIndex: 1 }}>
-        <Eye config={config.leftEye}  mouseX={mouseX} mouseY={mouseY} isBlinking={isBlinking} />
-        <Eye config={config.rightEye} mouseX={mouseX} mouseY={mouseY} isBlinking={isBlinking} />
+        <Eye config={config.leftEye}  mouseX={mouseX} mouseY={mouseY} isBlinking={isBlinking} isDizzy={currentEmotion === "dizzy"} />
+        <Eye config={config.rightEye} mouseX={mouseX} mouseY={mouseY} isBlinking={isBlinking} isDizzy={currentEmotion === "dizzy"} />
       </div>
     </div>
   );

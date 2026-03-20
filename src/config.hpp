@@ -35,9 +35,9 @@ struct AppConfig {
     static constexpr int kStreamWidth      = 480; // 流编码宽度（检测仍用原始分辨率）
     static constexpr int kStreamHeight     = 270; // 流编码高度
 
-    static constexpr int kVoiceThreshold   = 200;
-    static constexpr int kSilenceThreshold = 400;
-    static constexpr int kSilenceLimitMs   = 500;
+    static constexpr int kVoiceThreshold   = 100;  // 正常说话触发阈值
+    static constexpr int kSilenceThreshold = 80;   // 低于此值视为静音
+    static constexpr int kSilenceLimitMs   = 1000;
     static constexpr int kInputSize        = 640;
 };
 

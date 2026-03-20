@@ -23,4 +23,5 @@ target_link_libraries(mambo_robot
     asound
     NBGlinker
     VIPhal
+    websockets
 )

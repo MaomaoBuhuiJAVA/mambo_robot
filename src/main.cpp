@@ -21,20 +21,13 @@ int main() {
     web.Start(&serial);
 
     mambo::VisionEngine vision;
-    mambo::DialogSystem dialog(&serial);
+    mambo::DialogSystem dialog(&serial, &web);
     dialog.Start();
 
     // 警报 TTS 播放（异步，不阻塞主循环）
-    auto playAlert = [](const std::string& text, const std::string& token) {
-        std::thread([text, token]() {
-            CURL* curl = curl_easy_init();
-            char* esc = curl_easy_escape(curl, text.c_str(), text.length());
-            std::string url = "https://tsn.baidu.com/text2audio?tex=" + std::string(esc)
-                            + "&lan=zh&cuid=op4pro&ctp=1&tok=" + token
-                            + "&per=4&spd=5&pit=6&vol=3";
-            curl_free(esc); curl_easy_cleanup(curl);
-            system(("wget -q -O /tmp/alert.mp3 \"" + url + "\" && mpg123 -q -a " +
-                    std::string(mambo::AppConfig::kAlsaPlayDevice) + " /tmp/alert.mp3 >/dev/null 2>&1").c_str());
+    auto playAlert = [](const std::string& text) {
+        std::thread([text]() {
+            mambo::TtsPlay(text, mambo::AppConfig::kAlsaPlayDevice);
         }).detach();
     };
 
@@ -118,13 +111,8 @@ int main() {
                 latest_frame_h = fh;
             }
 
-            // 直接在推理线程推送眼睛数据，最小化延迟
+            // 直接在推理线程推送眼睛坐标，情绪由 LLM 控制
             {
-                std::string emo;
-                {
-                    std::lock_guard<std::mutex> lk(data_mtx);
-                    emo = slow_faces.empty() ? "ZhongXing" : slow_faces[0].emotion;
-                }
                 if (!boxes.empty()) {
                     float target_cx = boxes[0].x + boxes[0].width  / 2.0f;
                     float target_cy = boxes[0].y + boxes[0].height / 2.0f;
@@ -135,7 +123,7 @@ int main() {
                 float half_h = std::max(1.0f, fh / 2.0f);
                 float nx = -(smooth_cx - half_w) / half_w;
                 float ny =  (smooth_cy - half_h) / half_h;
-                web.PushEyeData(nx, ny, emo);
+                web.PushEyePos(nx, ny);
             }
 
             std::vector<mambo::ObjectResult> objects;
@@ -184,8 +172,14 @@ int main() {
         // 消费警报，触发语音
         std::string alert = serial.ConsumeAlert();
         if (!alert.empty()) {
-            std::string msg = (alert == "cliff") ? "啊！前面是悬崖，星宝~" : "啊！星宝要跌落了！";
-            playAlert(msg, dialog.GetBaiduToken());
+            if (alert == "cliff") {
+                playAlert("啊！前面是悬崖，星宝~");
+            } else if (alert == "fall") {
+                playAlert("啊！星宝要跌落了！");
+            } else if (alert == "dizzy") {
+                web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
+                playAlert("别晃了，星宝好晕呀~");
+            }
         }
 
         // 每秒构建 status JSON + 控制台打印
@@ -222,7 +216,9 @@ int main() {
             web.PushStatus(json);
 
             // 控制台打印 ── 香橙派
-            std::cout << "\n┌─ 视觉 FPS:" << det_fps << "  状态:" << ss;
+            std::cout << "\n┌─ 视觉 FPS:" << det_fps << "  状态:" << ss
+                      << "  🎤RMS:" << dialog.GetMicRms()
+                      << "(阈值:" << mambo::AppConfig::kVoiceThreshold << ")";
             if (!faces.empty())
                 std::cout << "  人脸:[" << faces[0].name << "|" << faces[0].emotion
                           << "|" << std::fixed << std::setprecision(2) << faces[0].score << "]";
