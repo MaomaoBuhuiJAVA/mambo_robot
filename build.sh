@@ -8,7 +8,7 @@ cmake ..
 make -j8
 
 echo ">>> 编译完成，正在启动..."
-sudo chmod 777 /dev/ttyS7 2>/dev/null || true
+
 export LD_LIBRARY_PATH="$SCRIPT_DIR/third_party:$LD_LIBRARY_PATH"
 export DISPLAY=${DISPLAY:-:0}
 cd "$SCRIPT_DIR"

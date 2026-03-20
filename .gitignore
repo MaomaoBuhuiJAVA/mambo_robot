@@ -19,6 +19,7 @@ faces/*/
 # Node.js
 eyes-ui/node_modules/
 eyes-ui/dist/
+eyes-ui/package-lock.json
 
 # IDE
 .vscode/
