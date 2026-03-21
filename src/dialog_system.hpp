@@ -174,35 +174,26 @@ static std::string AsrRecognize(const std::vector<short>& audio_data) {
     return ctx.result;
 }
 
-// ===== TTS 本地接口（输出 PCM 24kHz/16bit/单声道，用 aplay 播放）=====
+// ===== TTS（libcurl 下载 PCM，aplay 播放）=====
 static void TtsPlay(const std::string& text, const std::string& alsa_device) {
-    // POST https://124.222.205.168/tts/  body: {"text":"...","character":"klee"}
-    // 返回裸 PCM 24kHz/16bit/单声道
+    // 用 libcurl 直接下载，避免 system(curl) 的 shell 注入风险
     std::string body = "{\"text\":\"" + text + "\",\"character\":\"klee\"}";
-    std::string cmd = "curl -sk -X POST https://124.222.205.168/tts/ "
-                      "-H 'Content-Type: application/json' "
-                      "-d '" + body + "' "
-                      "-o /tmp/tts.pcm 2>/tmp/tts_curl.log";
-    int ret = system(cmd.c_str());
-    if (ret != 0) {
-        std::cerr << "[TTS Error] curl 下载失败 ret=" << ret << "\n";
-        system("cat /tmp/tts_curl.log >&2");
+    std::string pcm_data = HttpUtils::Post(
+        "https://124.222.205.168/tts/",
+        body, {"Content-Type: application/json"}, 15);
+
+    if (pcm_data.size() < 100) {
+        std::cerr << "[TTS Error] PCM 数据过小 (" << pcm_data.size() << " bytes)\n";
         return;
     }
-    // 无论成功失败都打印 curl log 方便调试
-    system("cat /tmp/tts_curl.log >&2");
-    // 检查文件大小
-    FILE* f = fopen("/tmp/tts.pcm", "rb");
-    if (!f) { std::cerr << "[TTS Error] 无法打开 /tmp/tts.pcm\n"; return; }
-    fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f);
-    if (sz < 100) {
-        std::cerr << "[TTS Error] PCM 文件过小 (" << sz << " bytes)，可能请求失败\n";
-        // 打印 curl log
-        system("cat /tmp/tts_curl.log >&2");
-        return;
-    }
-    std::cerr << "[TTS] 播放 " << sz << " bytes PCM (24kHz/16bit/mono)\n";
-    // aplay: 24000Hz, 16bit signed LE, 单声道；sox 调音量（0.0-1.0）
+    std::cerr << "[TTS] 收到 " << pcm_data.size() << " bytes PCM\n";
+
+    // 写入临时文件
+    FILE* f = fopen("/tmp/tts.pcm", "wb");
+    if (!f) { std::cerr << "[TTS Error] 无法写入 /tmp/tts.pcm\n"; return; }
+    fwrite(pcm_data.data(), 1, pcm_data.size(), f);
+    fclose(f);
+
     std::string play_cmd = "sox -t raw -r 24000 -e signed -b 16 -c 1 /tmp/tts.pcm "
                            "-t raw - vol 0.4 | "
                            "aplay -q -D " + alsa_device +

@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星宝 · 超级控制台</title>
+<style>
+:root{--bg:#080c10;--bg1:#0d1117;--bg2:#161b22;--bg3:#1c2128;--border:#21262d;--border2:#30363d;
+  --cyan:#00e5ff;--green:#3fb950;--red:#f85149;--yellow:#e3b341;--blue:#58a6ff;--purple:#bc8cff;
+  --text:#e6edf3;--muted:#8b949e}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;gap:12px;padding:0 16px;height:44px;
+  background:var(--bg2);border-bottom:1px solid var(--border2);flex-shrink:0}
+#topbar .logo{font-size:15px;font-weight:700;color:var(--cyan);letter-spacing:3px;text-shadow:0 0 14px var(--cyan)}
+.sep{width:1px;height:20px;background:var(--border2)}
+.pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
+  background:var(--bg3);border:1px solid var(--border);font-size:11px}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+.dot.warn{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+#topbar .spacer{flex:1}
+#clock{color:var(--muted);font-size:11px;min-width:80px;text-align:right}
+#main{flex:1;display:grid;grid-template-columns:1fr 1fr 320px;grid-template-rows:1fr 1fr;gap:6px;padding:6px;overflow:hidden}
+.card{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;
+  display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.card-hdr{display:flex;align-items:center;gap:8px;padding:6px 12px;
+  background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0}
+.card-hdr .icon{font-size:13px}
+.card-hdr .title{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase}
+.card-hdr .badge{margin-left:auto;font-size:10px;padding:1px 8px;border-radius:10px;
+  background:var(--bg);border:1px solid var(--border);color:var(--muted)}
+.card-body{flex:1;overflow:hidden;position:relative;min-height:0}
+#cam{width:100%;height:100%;object-fit:cover;display:block}
+#right-col{grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+.srow{display:flex;justify-content:space-between;align-items:center;padding:5px 12px;border-bottom:1px solid var(--border)}
+.srow:last-child{border:none}
+.slabel{color:var(--muted);font-size:11px}
+.sval{font-weight:700;font-size:12px;color:var(--blue);text-align:right}
+.sval.ok{color:var(--green)}.sval.warn{color:var(--yellow)}.sval.err{color:var(--red)}
+canvas{display:block;width:100%;height:100%}
+#ctrl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:8px}
+.mbtn{border:none;border-radius:7px;background:var(--bg3);color:var(--text);font-size:20px;
+  cursor:pointer;transition:all .1s;user-select:none;border:1px solid var(--border);
+  padding:10px 0;display:flex;align-items:center;justify-content:center;touch-action:none}
+.mbtn:active,.mbtn.active{background:#1f6feb;border-color:#388bfd;box-shadow:0 0 14px #1f6feb66}
+.mbtn.stop-btn{background:#2d1515;border-color:#6e2020}
+.mbtn.stop-btn:active{background:var(--red);border-color:var(--red)}
+.speed-wrap{padding:0 10px 8px;display:flex;align-items:center;gap:8px}
+.speed-wrap input[type=range]{flex:1;accent-color:var(--cyan)}
+#log-box{flex:1;overflow-y:auto;padding:5px 10px;font-size:10.5px;line-height:1.8;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.ll{color:var(--muted)}.ll.w{color:var(--yellow)}.ll.e{color:var(--red)}.ll.g{color:var(--green)}.ll.c{color:var(--cyan)}
+.ll .ts{color:#2d3340;margin-right:5px}
+#statusbar{height:22px;background:var(--bg2);border-top:1px solid var(--border2);
+  display:flex;align-items:center;gap:16px;padding:0 12px;flex-shrink:0;font-size:10px;color:var(--muted)}
+.sb{display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div id="topbar">
+  <span class="logo">⭐ 星宝</span>
+  <div class="sep"></div>
+  <div class="pill"><div class="dot off" id="dot-sse"></div><span id="lbl-sse">SSE 断开</span></div>
+  <div class="pill"><div class="dot off" id="dot-esp"></div><span id="lbl-esp">ESP32</span></div>
+  <div class="pill" id="state-pill"><div class="dot warn"></div><span id="lbl-state">等待中</span></div>
+  <div class="pill" id="alert-pill" style="display:none;border-color:var(--red)">
+    <div class="dot err" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div>
+    <span id="lbl-alert" style="color:var(--red)">-</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="pill">FPS <span id="lbl-fps" style="color:var(--cyan);margin-left:4px">-</span></div>
+  <div class="pill">情绪 <span id="lbl-emo" style="color:var(--purple);margin-left:4px">-</span></div>
+  <div id="clock">--:--:--</div>
+</div>
+
+<!-- 主区域 -->
+<div id="main">
+
+  <!-- 左上：摄像头 -->
+  <div class="card" style="grid-column:1;grid-row:1">
+    <div class="card-hdr"><span class="icon">📷</span><span class="title">实时画面</span>
+      <span class="badge" id="badge-cam">等待...</span></div>
+    <div class="card-body"><img id="cam" src="/api/v1/video/stream" alt="camera feed"></div>
+  </div>
+
+  <!-- 左下：电压/电流历史曲线 -->
+  <div class="card" style="grid-column:1;grid-row:2">
+    <div class="card-hdr"><span class="icon">⚡</span><span class="title">电源监控</span>
+      <span class="badge"><span id="v-now">-</span>V · <span id="c-now">-</span>mA</span></div>
+    <div class="card-body"><canvas id="chart-canvas"></canvas></div>
+  </div>
+
+  <!-- 中上：雷达 + IMU -->
+  <div class="card" style="grid-column:2;grid-row:1">
+    <div class="card-hdr"><span class="icon">📡</span><span class="title">LD2402 雷达</span>
+      <span class="badge"><span id="radar-dist">-</span>cm · σ=<span id="radar-std">-</span></span></div>
+    <div class="card-body"><canvas id="radar-canvas"></canvas></div>
+  </div>
+
+  <!-- 中下：IMU 姿态 -->
+  <div class="card" style="grid-column:2;grid-row:2">
+    <div class="card-hdr"><span class="icon">🧭</span><span class="title">IMU 姿态</span>
+      <span class="badge" id="badge-imu">-</span></div>
+    <div class="card-body"><canvas id="imu-canvas"></canvas></div>
+  </div>
+
+  <!-- 右侧：控制 + 传感器 + 日志 -->
+  <div id="right-col">
+
+    <!-- 电机控制 -->
+    <div class="card" style="flex-shrink:0">
+      <div class="card-hdr"><span class="icon">🎮</span><span class="title">电机控制</span>
+        <span class="badge" id="badge-act">stop</span></div>
+      <div id="ctrl-grid">
+        <div></div>
+        <button class="mbtn" id="btn-fwd" onpointerdown="startCmd('forward')" onpointerup="stopCmd()" onpointerleave="stopCmd()">↑</button>
+        <div></div>
+        <button class="mbtn" id="btn-left" onpointerdown="startCmd('left')" onpointerup="stopCmd()" onpointerleave="stopCmd()">←</button>
+        <button class="mbtn stop-btn" onpointerdown="stopCmd()">■</button>
+        <button class="mbtn" id="btn-right" onpointerdown="startCmd('right')" onpointerup="stopCmd()" onpointerleave="stopCmd()">→</button>
+        <div></div>
+        <button class="mbtn" id="btn-bwd" onpointerdown="startCmd('backward')" onpointerup="stopCmd()" onpointerleave="stopCmd()">↓</button>
+        <div></div>
+      </div>
+      <div class="speed-wrap">
+        <span style="color:var(--muted);font-size:11px">速度</span>
+        <input type="range" min="0" max="255" value="220" id="spd" oninput="setSpeed(this.value)">
+        <span style="color:var(--cyan);font-weight:700;min-width:28px" id="spd-val">220</span>
+      </div>
+    </div>
+
+    <!-- 传感器数据 -->
+    <div class="card" style="flex-shrink:0">
+      <div class="card-hdr"><span class="icon">📊</span><span class="title">传感器</span></div>
+      <div id="sensor-list">
+        <div class="srow"><span class="slabel">电压</span><span class="sval" id="s-v">-</span></div>
+        <div class="srow"><span class="slabel">电流</span><span class="sval" id="s-c">-</span></div>
+        <div class="srow"><span class="slabel">加速度 X/Y/Z</span><span class="sval" id="s-acc">-</span></div>
+        <div class="srow"><span class="slabel">陀螺 X/Y/Z</span><span class="sval" id="s-gyr">-</span></div>
+        <div class="srow"><span class="slabel">悬崖检测</span><span class="sval" id="s-cliff">-</span></div>
+        <div class="srow"><span class="slabel">雷达距离</span><span class="sval" id="s-rdist">-</span></div>
+        <div class="srow"><span class="slabel">雷达 σ (烦躁)</span><span class="sval" id="s-rstd">-</span></div>
+        <div class="srow"><span class="slabel">人脸</span><span class="sval" id="s-face">-</span></div>
+      </div>
+    </div>
+
+    <!-- 事件日志 -->
+    <div class="card" style="flex:1;min-height:0">
+      <div class="card-hdr"><span class="icon">📋</span><span class="title">事件日志</span>
+        <button onclick="clearLog()" style="margin-left:auto;background:none;border:1px solid var(--border);
+          color:var(--muted);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:10px">清空</button>
+      </div>
+      <div id="log-box"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 底部状态栏 -->
+<div id="statusbar">
+  <div class="sb">⌨ WASD/方向键控制</div>
+  <div class="sb">· 长按按钮持续运动</div>
+  <div class="sb" style="margin-left:auto">星宝陪伴机器人 · 超级控制台 v2.0</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// 数据存储
+// ═══════════════════════════════════════════════════════════
+const MAX_HIST = 120;
+const vHist = [], cHist = [];
+let lastEsp = null, lastStatus = null;
+let eyeX = 0, eyeY = 0, eyeTargetX = 0, eyeTargetY = 0;
+let radarDist = 0, radarStd = 0;
+let imuAx = 0, imuAy = 0, imuAz = 1, imuGx = 0, imuGy = 0, imuGz = 0;
+let alertTimer = null;
+
+// ═══════════════════════════════════════════════════════════
+// 时钟
+// ═══════════════════════════════════════════════════════════
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    n.toTimeString().slice(0,8);
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ═══════════════════════════════════════════════════════════
+// 日志
+// ═══════════════════════════════════════════════════════════
+const logBox = document.getElementById('log-box');
+function log(msg, cls='') {
+  const ts = new Date().toTimeString().slice(0,8);
+  const d = document.createElement('div');
+  d.className = 'll ' + cls;
+  d.innerHTML = `<span class="ts">${ts}</span>${msg}`;
+  logBox.appendChild(d);
+  if (logBox.children.length > 200) logBox.removeChild(logBox.firstChild);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+function clearLog() { logBox.innerHTML = ''; }
+
+// ═══════════════════════════════════════════════════════════
+// 警报显示
+// ═══════════════════════════════════════════════════════════
+const alertMap = {cliff:'⚠ 悬崖检测', fall:'⚠ 跌落检测', dizzy:'⚠ 晕眩', agitated:'⚠ 小朋友烦躁'};
+function showAlert(type) {
+  const pill = document.getElementById('alert-pill');
+  const lbl  = document.getElementById('lbl-alert');
+  lbl.textContent = alertMap[type] || type;
+  pill.style.display = 'flex';
+  log(alertMap[type] || type, 'e');
+  clearTimeout(alertTimer);
+  alertTimer = setTimeout(() => { pill.style.display = 'none'; }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SSE: /status
+// ═══════════════════════════════════════════════════════════
+const stateColors = {waiting:'var(--muted)',listening:'var(--cyan)',thinking:'var(--yellow)',speaking:'var(--green)'};
+const stateLabels = {waiting:'等待唤醒',listening:'🎤 聆听中',thinking:'🤔 思考中',speaking:'🔊 播报中'};
+
+function connectStatus() {
+  const es = new EventSource('/status');
+  es.onopen = () => {
+    document.getElementById('dot-sse').className = 'dot on';
+    document.getElementById('lbl-sse').textContent = 'SSE 已连接';
+    log('SSE /status 连接成功', 'g');
+  };
+  es.onerror = () => {
+    document.getElementById('dot-sse').className = 'dot off';
+    document.getElementById('lbl-sse').textContent = 'SSE 断开';
+    es.close();
+    setTimeout(connectStatus, 2000);
+  };
+  es.onmessage = ev => {
+    try {
+      const d = JSON.parse(ev.data);
+      lastStatus = d;
+
+      // FPS
+      if (d.fps != null) document.getElementById('lbl-fps').textContent = d.fps;
+
+      // 对话状态
+      if (d.state) {
+        const lbl = stateLabels[d.state] || d.state;
+        document.getElementById('lbl-state').textContent = lbl;
+        document.getElementById('state-pill').style.setProperty('--c', stateColors[d.state] || 'var(--muted)');
+      }
+
+      // 人脸
+      if (d.face) {
+        const f = d.face;
+        document.getElementById('s-face').textContent = `${f.name} ${f.emotion} ${(f.score*100|0)}%`;
+        document.getElementById('lbl-emo').textContent = f.emotion;
+      } else {
+        document.getElementById('s-face').textContent = '未检测到';
+      }
+
+      // ESP32
+      if (d.esp32) {
+        const e = d.esp32;
+        lastEsp = e;
+        document.getElementById('dot-esp').className = 'dot on';
+        document.getElementById('lbl-esp').textContent = 'ESP32';
+
+        // 电源
+        const vv = parseFloat(e.v) || 0;
+        const cc = (parseFloat(e.c) || 0) * 1000;
+        document.getElementById('v-now').textContent = vv.toFixed(2);
+        document.getElementById('c-now').textContent = cc.toFixed(0);
+        sv('s-v', vv.toFixed(2) + ' V', vv < 7.0 ? 'err' : vv < 7.5 ? 'warn' : 'ok');
+        sv('s-c', cc.toFixed(0) + ' mA', cc > 400 ? 'warn' : 'ok');
+
+        // 历史
+        vHist.push(vv); cHist.push(cc);
+        if (vHist.length > MAX_HIST) { vHist.shift(); cHist.shift(); }
+
+        // IMU
+        imuAx = parseFloat(e.ax)||0; imuAy = parseFloat(e.ay)||0; imuAz = parseFloat(e.az)||0;
+        imuGx = parseFloat(e.gx)||0; imuGy = parseFloat(e.gy)||0; imuGz = parseFloat(e.gz)||0;
+        document.getElementById('s-acc').textContent =
+          `${imuAx.toFixed(2)}, ${imuAy.toFixed(2)}, ${imuAz.toFixed(2)} g`;
+        document.getElementById('s-gyr').textContent =
+          `${imuGx.toFixed(1)}, ${imuGy.toFixed(1)}, ${imuGz.toFixed(1)} °/s`;
+        document.getElementById('badge-imu').textContent =
+          `|a|=${Math.sqrt(imuAx*imuAx+imuAy*imuAy+imuAz*imuAz).toFixed(2)}g`;
+
+        // 悬崖
+        sv('s-cliff', e.cliff ? '⚠ 检测到' : '安全', e.cliff ? 'err' : 'ok');
+
+        // 雷达
+        radarDist = parseInt(e.radar_dist) || 0;
+        radarStd  = (parseInt(e.radar_energy) || 0) / 10.0;
+        document.getElementById('radar-dist').textContent = radarDist;
+        document.getElementById('radar-std').textContent  = radarStd.toFixed(1);
+        sv('s-rdist', radarDist + ' cm', 'ok');
+        sv('s-rstd',  radarStd.toFixed(1) + ' cm', radarStd > 15 ? 'warn' : 'ok');
+
+        // 动作
+        document.getElementById('badge-act').textContent = e.act || 'stop';
+        document.getElementById('badge-cam').textContent = `${e.act || 'stop'} · ${d.fps||0}fps`;
+      }
+    } catch(err) {}
+  };
+}
+connectStatus();
+
+// ═══════════════════════════════════════════════════════════
+// SSE: /eyes
+// ═══════════════════════════════════════════════════════════
+function connectEyes() {
+  const es = new EventSource('/eyes');
+  es.onmessage = ev => {
+    try {
+      const d = JSON.parse(ev.data);
+      if (d.x != null) eyeTargetX = d.x;
+      if (d.y != null) eyeTargetY = d.y;
+      if (d.emotion) {
+        document.getElementById('lbl-emo').textContent = d.emotion;
+      }
+    } catch(err) {}
+  };
+  es.onerror = () => { es.close(); setTimeout(connectEyes, 2000); };
+}
+connectEyes();
+
+// ═══════════════════════════════════════════════════════════
+// 电机控制
+// ═══════════════════════════════════════════════════════════
+let currentAct = 'stop', heartbeat = null;
+const keyMap = {ArrowUp:'forward',KeyW:'forward',ArrowDown:'backward',KeyS:'backward',
+                ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right'};
+const pressed = new Set();
+
+function startCmd(act) {
+  currentAct = act;
+  fetch('/cmd?act=' + act).catch(()=>{});
+  clearInterval(heartbeat);
+  heartbeat = setInterval(() => { if (currentAct !== 'stop') fetch('/cmd?act=' + currentAct).catch(()=>{}); }, 150);
+  ['btn-fwd','btn-bwd','btn-left','btn-right'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active',
+      (id==='btn-fwd'&&act==='forward')||(id==='btn-bwd'&&act==='backward')||
+      (id==='btn-left'&&act==='left')||(id==='btn-right'&&act==='right'));
+  });
+}
+function stopCmd() {
+  currentAct = 'stop';
+  clearInterval(heartbeat); heartbeat = null;
+  fetch('/cmd?act=stop').catch(()=>{});
+  ['btn-fwd','btn-bwd','btn-left','btn-right'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.classList.remove('active');
+  });
+}
+function setSpeed(v) {
+  document.getElementById('spd-val').textContent = v;
+  fetch('/cmd?act=speed:' + v).catch(()=>{});
+}
+document.addEventListener('keydown', e => {
+  if (keyMap[e.code] && !pressed.has(e.code)) { pressed.add(e.code); startCmd(keyMap[e.code]); }
+});
+document.addEventListener('keyup', e => {
+  if (keyMap[e.code]) { pressed.delete(e.code); if (pressed.size === 0) stopCmd(); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 工具
+// ═══════════════════════════════════════════════════════════
+function sv(id, v, cls='') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = v;
+  el.className = 'sval' + (cls ? ' ' + cls : '');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Canvas: 电源历史曲线
+// ═══════════════════════════════════════════════════════════
+const chartCanvas = document.getElementById('chart-canvas');
+const chartCtx = chartCanvas.getContext('2d');
+
+function drawChart() {
+  const W = chartCanvas.width  = chartCanvas.offsetWidth;
+  const H = chartCanvas.height = chartCanvas.offsetHeight;
+  chartCtx.clearRect(0, 0, W, H);
+  if (vHist.length < 2) { requestAnimationFrame(drawChart); return; }
+
+  const pad = {t:16, b:24, l:44, r:12};
+  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+
+  // 网格
+  chartCtx.strokeStyle = '#1c2128'; chartCtx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + ch * i / 4;
+    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(pad.l + cw, y); chartCtx.stroke();
+  }
+
+  // 电压曲线 (6.5~9V)
+  const vMin = 6.5, vMax = 9.0;
+  chartCtx.beginPath(); chartCtx.strokeStyle = '#00e5ff'; chartCtx.lineWidth = 1.5;
+  vHist.forEach((v, i) => {
+    const x = pad.l + cw * i / (MAX_HIST - 1);
+    const y = pad.t + ch * (1 - (v - vMin) / (vMax - vMin));
+    i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
+  });
+  chartCtx.stroke();
+
+  // 电流曲线 (0~600mA)
+  const cMin = 0, cMax = 600;
+  chartCtx.beginPath(); chartCtx.strokeStyle = '#e3b341'; chartCtx.lineWidth = 1.5;
+  cHist.forEach((c, i) => {
+    const x = pad.l + cw * i / (MAX_HIST - 1);
+    const y = pad.t + ch * (1 - (c - cMin) / (cMax - cMin));
+    i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
+  });
+  chartCtx.stroke();
+
+  // Y轴标签
+  chartCtx.fillStyle = '#8b949e'; chartCtx.font = '9px monospace'; chartCtx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + ch * i / 4;
+    const vLabel = (vMax - (vMax - vMin) * i / 4).toFixed(1);
+    chartCtx.fillText(vLabel + 'V', pad.l - 3, y + 3);
+  }
+
+  // 图例
+  chartCtx.textAlign = 'left'; chartCtx.font = '9px monospace';
+  chartCtx.fillStyle = '#00e5ff'; chartCtx.fillText('电压', pad.l + 4, pad.t + 10);
+  chartCtx.fillStyle = '#e3b341'; chartCtx.fillText('电流', pad.l + 40, pad.t + 10);
+
+  requestAnimationFrame(drawChart);
+}
+drawChart();
+
+// ═══════════════════════════════════════════════════════════
+// Canvas: 雷达扇形图
+// ═══════════════════════════════════════════════════════════
+const radarCanvas = document.getElementById('radar-canvas');
+const radarCtx = radarCanvas.getContext('2d');
+let radarAngle = 0;
+
+function drawRadar() {
+  const W = radarCanvas.width  = radarCanvas.offsetWidth;
+  const H = radarCanvas.height = radarCanvas.offsetHeight;
+  radarCtx.clearRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H * 0.88;
+  const maxR = Math.min(W * 0.46, H * 0.82);
+  const maxDist = 500; // cm
+
+  // 同心弧 + 距离标注
+  radarCtx.strokeStyle = '#1c2128'; radarCtx.lineWidth = 1;
+  [100, 200, 300, 400, 500].forEach(d => {
+    const r = maxR * d / maxDist;
+    radarCtx.beginPath();
+    radarCtx.arc(cx, cy, r, Math.PI, 0);
+    radarCtx.stroke();
+    radarCtx.fillStyle = '#3d4450'; radarCtx.font = '9px monospace'; radarCtx.textAlign = 'center';
+    radarCtx.fillText(d + 'cm', cx + r + 2, cy - 2);
+  });
+
+  // 扇形射线
+  radarCtx.strokeStyle = '#1c2128';
+  [-75,-60,-45,-30,-15,0,15,30,45,60,75].forEach(deg => {
+    const a = Math.PI + deg * Math.PI / 180;
+    radarCtx.beginPath();
+    radarCtx.moveTo(cx, cy);
+    radarCtx.lineTo(cx + maxR * Math.cos(a), cy + maxR * Math.sin(a));
+    radarCtx.stroke();
+  });
+
+  // 扫描线动画
+  radarAngle += 0.03;
+  const sa = Math.PI + radarAngle;
+  const grad = radarCtx.createLinearGradient(cx, cy,
+    cx + maxR * Math.cos(sa), cy + maxR * Math.sin(sa));
+  grad.addColorStop(0, '#00e5ff00');
+  grad.addColorStop(1, '#00e5ff44');
+  radarCtx.beginPath();
+  radarCtx.moveTo(cx, cy);
+  radarCtx.arc(cx, cy, maxR, sa - 0.3, sa);
+  radarCtx.closePath();
+  radarCtx.fillStyle = grad;
+  radarCtx.fill();
+
+  // 目标点
+  if (radarDist > 0 && radarDist < maxDist) {
+    const r = maxR * radarDist / maxDist;
+    const isAgitated = radarStd > 15;
+    const dotColor = isAgitated ? '#f85149' : '#00e5ff';
+    // 目标圆
+    radarCtx.beginPath();
+    radarCtx.arc(cx, cy - r, isAgitated ? 7 : 5, 0, Math.PI * 2);
+    radarCtx.fillStyle = dotColor;
+    radarCtx.shadowColor = dotColor;
+    radarCtx.shadowBlur = isAgitated ? 20 : 10;
+    radarCtx.fill();
+    radarCtx.shadowBlur = 0;
+    // 距离线
+    radarCtx.beginPath();
+    radarCtx.moveTo(cx, cy);
+    radarCtx.lineTo(cx, cy - r);
+    radarCtx.strokeStyle = dotColor + '66';
+    radarCtx.lineWidth = 1;
+    radarCtx.stroke();
+    // 标注
+    radarCtx.fillStyle = dotColor;
+    radarCtx.font = 'bold 11px monospace';
+    radarCtx.textAlign = 'center';
+    radarCtx.fillText(radarDist + 'cm', cx + 20, cy - r - 8);
+    if (isAgitated) {
+      radarCtx.fillStyle = '#f85149';
+      radarCtx.font = '10px monospace';
+      radarCtx.fillText('⚠ 烦躁 σ=' + radarStd.toFixed(1), cx + 20, cy - r + 6);
+    }
+  }
+
+  // 原点
+  radarCtx.beginPath();
+  radarCtx.arc(cx, cy, 4, 0, Math.PI * 2);
+  radarCtx.fillStyle = '#00e5ff';
+  radarCtx.shadowColor = '#00e5ff'; radarCtx.shadowBlur = 8;
+  radarCtx.fill(); radarCtx.shadowBlur = 0;
+
+  requestAnimationFrame(drawRadar);
+}
+drawRadar();
+
+// ═══════════════════════════════════════════════════════════
+// Canvas: IMU 姿态可视化
+// ═══════════════════════════════════════════════════════════
+const imuCanvas = document.getElementById('imu-canvas');
+const imuCtx = imuCanvas.getContext('2d');
+
+function drawIMU() {
+  const W = imuCanvas.width  = imuCanvas.offsetWidth;
+  const H = imuCanvas.height = imuCanvas.offsetHeight;
+  imuCtx.clearRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H / 2;
+  const R = Math.min(W, H) * 0.36;
+
+  // 外圆
+  imuCtx.beginPath();
+  imuCtx.arc(cx, cy, R, 0, Math.PI * 2);
+  imuCtx.strokeStyle = '#21262d'; imuCtx.lineWidth = 1;
+  imuCtx.stroke();
+
+  // 十字线
+  imuCtx.strokeStyle = '#21262d';
+  imuCtx.beginPath(); imuCtx.moveTo(cx - R, cy); imuCtx.lineTo(cx + R, cy); imuCtx.stroke();
+  imuCtx.beginPath(); imuCtx.moveTo(cx, cy - R); imuCtx.lineTo(cx, cy + R); imuCtx.stroke();
+
+  // 加速度向量（XY平面投影）
+  const scale = R * 0.7;
+  const ax_s = imuAx * scale, ay_s = -imuAy * scale;
+  imuCtx.beginPath();
+  imuCtx.moveTo(cx, cy);
+  imuCtx.lineTo(cx + ax_s, cy + ay_s);
+  imuCtx.strokeStyle = '#00e5ff'; imuCtx.lineWidth = 2.5;
+  imuCtx.stroke();
+  imuCtx.beginPath();
+  imuCtx.arc(cx + ax_s, cy + ay_s, 5, 0, Math.PI * 2);
+  imuCtx.fillStyle = '#00e5ff';
+  imuCtx.shadowColor = '#00e5ff'; imuCtx.shadowBlur = 10;
+  imuCtx.fill(); imuCtx.shadowBlur = 0;
+
+  // 陀螺仪 Z 轴旋转指示（圆弧）
+  const gzNorm = Math.max(-1, Math.min(1, imuGz / 250));
+  if (Math.abs(gzNorm) > 0.01) {
+    imuCtx.beginPath();
+    imuCtx.arc(cx, cy, R * 0.85, -Math.PI / 2, -Math.PI / 2 + gzNorm * Math.PI);
+    imuCtx.strokeStyle = gzNorm > 0 ? '#e3b341' : '#bc8cff';
+    imuCtx.lineWidth = 3;
+    imuCtx.stroke();
+  }
+
+  // 合力大小
+  const mag = Math.sqrt(imuAx*imuAx + imuAy*imuAy + imuAz*imuAz);
+  imuCtx.fillStyle = mag < 0.3 ? '#f85149' : '#8b949e';
+  imuCtx.font = '10px monospace'; imuCtx.textAlign = 'center';
+  imuCtx.fillText('|a|=' + mag.toFixed(2) + 'g', cx, cy + R + 14);
+
+  // 轴标签
+  imuCtx.fillStyle = '#3d4450'; imuCtx.font = '9px monospace';
+  imuCtx.fillText('X', cx + R + 8, cy + 3);
+  imuCtx.fillText('Y', cx + 3, cy - R - 5);
+
+  // 陀螺仪数值
+  imuCtx.fillStyle = '#8b949e'; imuCtx.font = '9px monospace'; imuCtx.textAlign = 'left';
+  imuCtx.fillText(`Gz:${imuGz.toFixed(0)}°/s`, 6, H - 6);
+
+  requestAnimationFrame(drawIMU);
+}
+drawIMU();
+</script>
+</body>
+</html>

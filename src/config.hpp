@@ -5,8 +5,8 @@
 
 namespace mambo {
 struct AppConfig {
-    static constexpr const char* kAlsaRecDevice  = "plughw:2,0";
-    static constexpr const char* kAlsaPlayDevice = "plughw:3,0";
+    static constexpr const char* kAlsaRecDevice  = "plughw:3,0";
+    static constexpr const char* kAlsaPlayDevice = "plughw:2,0";
 
     // API Keys
     static constexpr const char* kBaiduApiKey    = "mOEMA8FfryEAdeEsJ5cIMH0D";

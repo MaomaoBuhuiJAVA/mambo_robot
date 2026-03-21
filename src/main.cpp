@@ -12,8 +12,14 @@
 #include <iomanip>
 #include <iostream>
 #include <cstdio>
+#include <csignal>
+
+static std::atomic<bool> g_shutdown{false};
+static void sigHandler(int) { g_shutdown = true; }
 
 int main() {
+    std::signal(SIGINT,  sigHandler);
+    std::signal(SIGTERM, sigHandler);
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     mambo::SerialManager serial(mambo::AppConfig::kSerialPort);
@@ -150,7 +156,7 @@ int main() {
     // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
 
-    while (true) {
+    while (!g_shutdown) {
         cv::Rect box; bool hf; int fw, fh;
         std::vector<mambo::ObjectResult> objects;
         std::vector<mambo::FaceResult>   faces;
@@ -179,6 +185,9 @@ int main() {
             } else if (alert == "dizzy") {
                 web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
                 playAlert("别晃了，星宝好晕呀~");
+            } else if (alert == "agitated") {
+                web.PushEyeData(0, 0, "Worried"); // 担心表情
+                playAlert("小朋友，星宝在这里陪你，别着急哦~");
             }
         }
 
@@ -242,7 +251,9 @@ int main() {
                           << " Y:" << esp.gy << " Z:" << esp.gz << " °/s  "
                           << "悬崖:" << (esp.cliff ? "⚠ 检测到" : "安全") << "  "
                           << "雷达:" << (esp.radar ? "触发" : "无") << "  "
-                          << "动作:" << esp.act;
+                          << "动作:" << esp.act
+                          << "  雷达距离:" << esp.radar_dist << "cm"
+                          << "  运动能量:" << esp.radar_energy;
             } else {
                 std::cout << "\n└─ ESP32  等待连接...";
             }
@@ -252,6 +263,7 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
 
+    std::cout << "\n[主程序] 正在退出...\n";
     running = false;
     cap_cv.notify_all();
     capture_thread.join();

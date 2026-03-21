@@ -13,7 +13,6 @@ export function Eye({ config, mouseX, mouseY, isBlinking, isDizzy }: EyeProps) {
   const springX = useSpring(mouseX, { stiffness: 400, damping: 30, mass: 0.3 });
   const springY = useSpring(mouseY, { stiffness: 400, damping: 30, mass: 0.3 });
 
-  // 晕眩时不跟随鼠标
   const lookX = useTransform(springX, [-1, 1], isDizzy ? [0, 0] : [-120, 120]);
   const lookY = useTransform(springY, [-1, 1], isDizzy ? [0, 0] : [-120, 120]);
 
@@ -77,41 +76,4 @@ export function Eye({ config, mouseX, mouseY, isBlinking, isDizzy }: EyeProps) {
       </motion.div>
     </div>
   );
-}               strokeDasharray="30 45"
-        }
-              style={{
-                filter: `drop-shadow(0 0 10px ${config.color}dd) drop-shadow(0 0 28px ${config.color}88) drop-shadow(0 0 50px ${config.color}44)`,
-                transformOrigin: "center",
-              }}
-            />
-          )}
-        </svg>
-      </motion.div>
-    </div>
-  );
 }
-            : { type: "spring", stiffness: 220, damping: 14, mass: 0.7 }
-              </motion.g>
-          ) : (
-            <motion.path
-              d={config.path}
-              animate={{
-                d: config.path,
-                fill: config.color,
-                scaleX: config.scaleX,
-                scaleY: isBlinking ? 0.04 : config.scaleY,
-                rotate: config.rotate,
-                x: config.x,
-                y: config.y,
-              }}
-              transition={
-                isBlinking
-                  ? { duration: 0.06, ease: "easeOut" }
-      hadow(0 0 6px ${config.color})` }} />
-                    animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
-                style={{ filter: `drop-shadow(0 0 8px ${config.color}cc)` }}
-              />
-              {/* 中心点 */}
-              <circle cx="50" cy="70" r="6" fill={config.color}
-                style={{ filter: `drop-s

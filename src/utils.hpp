@@ -53,8 +53,10 @@ public:
         float ax = 0, ay = 0, az = 0;
         float gx = 0, gy = 0, gz = 0;
         bool  cliff = false, radar = false;
-        std::string alert;   // "cliff" / "fall" / ""
+        std::string alert;   // "cliff" / "fall" / "dizzy" / "agitated" / ""
         std::string act = "stop";
+        int   radar_dist   = 0;  // LD2402 目标距离（cm）
+        int   radar_energy = 0;  // LD2402 运动能量总和
         bool valid = false;
     };
 
@@ -66,7 +68,7 @@ private:
         auto pos = s.find("\"" + key + "\":");
         if (pos == std::string::npos) return 0.0f;
         pos += key.size() + 3;
-        return std::stof(s.substr(pos));
+        try { return std::stof(s.substr(pos)); } catch (...) { return 0.0f; }
     }
     static int jsonInt(const std::string& s, const std::string& key) {
         return (int)jsonFloat(s, key);
@@ -110,6 +112,8 @@ public:
         char buf[256];
         int n = read(fd, buf, sizeof(buf));
         if (n <= 0) return;
+        // 防止 rx_buf_ 无限增长（正常每行 < 200 字节，4096 足够）
+        if (rx_buf_.size() + n > 4096) rx_buf_.clear();
         rx_buf_.append(buf, n);
         size_t pos;
         while ((pos = rx_buf_.find('\n')) != std::string::npos) {
@@ -130,6 +134,8 @@ public:
                     esp_data_.gz    = jsonFloat(line, "gz");
                     esp_data_.cliff = jsonInt(line, "cliff") != 0;
                     esp_data_.radar = jsonInt(line, "radar") != 0;
+                    esp_data_.radar_dist   = jsonInt(line, "radar_dist");
+                    esp_data_.radar_energy = jsonInt(line, "radar_energy");
                     // 累积 alert，消费后清除
                     if (esp_data_.alert.empty()) {
                         std::string a = jsonStr(line, "alert");
@@ -168,13 +174,16 @@ public:
                  "\"v\":%.2f,\"c\":%.4f,"
                  "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
                  "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
-                 "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\"",
+                 "\"cliff\":%d,\"radar\":%d,\"act\":\"%s\","
+                 "\"radar_dist\":%d,\"radar_energy\":%d",
                  esp_data_.v, esp_data_.c,
                  esp_data_.ax, esp_data_.ay, esp_data_.az,
                  esp_data_.gx, esp_data_.gy, esp_data_.gz,
                  esp_data_.cliff ? 1 : 0,
                  esp_data_.radar ? 1 : 0,
-                 esp_data_.act.c_str());
+                 esp_data_.act.c_str(),
+                 esp_data_.radar_dist,
+                 esp_data_.radar_energy);
         return buf;
     }
 };
