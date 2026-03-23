@@ -23,6 +23,9 @@ class WebServer {
     std::thread server_thread;
     std::thread encoder_thread;
     std::atomic<bool> running_{false};
+    std::function<std::string(const std::string&)> backend_http_;
+    std::function<void(const std::string&)> mute_cmd_;
+    std::function<std::string()> diag_baidu_deepseek_;
 
     std::mutex eye_mtx_;
     std::condition_variable eye_cv_;
@@ -53,6 +56,9 @@ class WebServer {
     }
 
 public:
+    void SetBackendHttpHandler(std::function<std::string(const std::string&)> cb) { backend_http_ = std::move(cb); }
+    void SetMuteCommandHandler(std::function<void(const std::string&)> cb) { mute_cmd_ = std::move(cb); }
+    void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
     void PushEyeData(float nx, float ny, const std::string& emotion) {
         { std::lock_guard<std::mutex> lk(eye_mtx_);
           eye_emotion_ = emotion;
@@ -198,6 +204,53 @@ public:
             handle_cmd(act, res);
         });
 
+        auto handle_backend = [this](const std::string& mode) -> std::string {
+            if (!backend_http_) return "{\"ok\":false,\"error\":\"no_handler\"}";
+            return backend_http_(mode);
+        };
+        svr.Get("/backend", [this, handle_backend](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!backend_http_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "";
+            res.set_content(handle_backend(mode), "application/json");
+        });
+        svr.Post("/backend", [this, handle_backend](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!backend_http_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            std::string mode;
+            if (!req.body.empty()) {
+                size_t p = req.body.find("\"mode\"");
+                if (p != std::string::npos) {
+                    p = req.body.find(':', p);
+                    if (p != std::string::npos) {
+                        p = req.body.find('"', p);
+                        if (p != std::string::npos) {
+                            ++p;
+                            size_t q = req.body.find('"', p);
+                            if (q != std::string::npos) mode = req.body.substr(p, q - p);
+                        }
+                    }
+                }
+            }
+            res.set_content(handle_backend(mode), "application/json");
+        });
+
+        svr.Get("/mute", [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!mute_cmd_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
+            std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "";
+            if (mode == "on" || mode == "1" || mode == "true") mute_cmd_("mute on");
+            else if (mode == "off" || mode == "0" || mode == "false") mute_cmd_("mute off");
+            else if (mode == "toggle" || mode == "t") mute_cmd_("mute");
+            res.set_content("{\"ok\":true}", "application/json");
+        });
+
+        svr.Get("/diag/baidu_deepseek", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!diag_baidu_deepseek_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
+            res.set_content(diag_baidu_deepseek_(), "application/json");
+        });
+
         // 简易控制页
         svr.Get("/control", [](const httplib::Request&, httplib::Response& res) {
             res.set_content(
@@ -216,7 +269,8 @@ public:
 
         // ── 超级控制台 /dashboard ─────────────────────────────────
         // 从 src/dashboard.html 读取（运行时路径为 ./src/dashboard.html）
-        svr.Get("/dashboard", [](const httplib::Request&, httplib::Response& res) {
+        svr.Get("/dashboard", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
             std::string html = ReadFile("./src/dashboard.html");
             if (html.empty()) {
                 res.status = 503;
@@ -231,13 +285,15 @@ public:
         server_thread  = std::thread([this]() { svr.listen(AppConfig::kWebHost, AppConfig::kWebPort); });
     }
 
-    ~WebServer() {
+    void Stop() {
         running_ = false;
         video_raw_cv_.notify_all();
         svr.stop();
         if (encoder_thread.joinable()) encoder_thread.join();
         if (server_thread.joinable())  server_thread.join();
     }
+
+    ~WebServer() { Stop(); }
 
 private:
     static long long NowMs() {

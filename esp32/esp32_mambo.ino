@@ -1,9 +1,8 @@
 // ESP32-S3 Mambo 机器人控制器
-// 外设: LD2402雷达(Serial2), L298N电机, MPU6050陀螺仪, INA226电压, 3x红外跌落检测
+// 外设: LD2402雷达(Serial2), L298N电机, MPU6050陀螺仪, 3x红外跌落检测
 // 串口: Serial(USB调试) / Serial1(香橙派通信 RX=16 TX=17) / Serial2(LD2402 RX=18 TX=19)
 
 #include <Wire.h>
-#include <INA226.h>
 
 // ================= 引脚配置 =================
 const int SDA_PIN = 8,  SCL_PIN = 9;
@@ -13,8 +12,6 @@ const int CLIFF_L = 5, CLIFF_M = 6, CLIFF_R = 7;
 const int ENA = 10, IN1 = 11, IN2 = 12, IN3 = 13, IN4 = 14, ENB = 15;
 
 // ================= 全局变量 =================
-INA226 ina(0x40);
-const float R_SHUNT = 0.01f;
 #define MPU_ADDR 0x68
 
 unsigned long last_send_time = 0;
@@ -184,15 +181,6 @@ void setup() {
 
     Wire.begin(SDA_PIN, SCL_PIN, 400000);
 
-    // INA226
-    if (ina.begin()) {
-        ina.setMaxCurrentShunt(5.0, R_SHUNT);
-        ina.setAverage(INA226_4_SAMPLES);
-        Serial.println("[OK] INA226");
-    } else {
-        Serial.println("[FAIL] INA226");
-    }
-
     // MPU6050
     mpuInit();
     Wire.beginTransmission(MPU_ADDR);
@@ -298,15 +286,11 @@ void loop() {
     // 定时上报（400ms）
     if (now_ms - last_send_time > 400) {
         last_send_time = now_ms;
-
-        float v = ina.getBusVoltage();
-        float c = abs(ina.getCurrent_mA()) / 1000.0f;
         bool  cliff = !isSafe();
 
         // USB 调试打印
-        Serial.printf("V=%.2fV I=%.1fmA | A=[%.2f,%.2f,%.2f]g G=[%.1f,%.1f,%.1f]dps | "
+        Serial.printf("A=[%.2f,%.2f,%.2f]g G=[%.1f,%.1f,%.1f]dps | "
                       "悬崖=%s 动作=%s | LD2402: dist=%dcm std=%.1f\n",
-                      v, c * 1000,
                       ax_g, ay_g, az_g,
                       gx_d, gy_d, gz_d,
                       cliff ? "是" : "否",
@@ -316,12 +300,11 @@ void loop() {
 
         // Serial1 发给香橙派（JSON）
         // radar_energy 传 std*10 整数化，兼容旧字段名
-        Serial1.printf("{\"v\":%.2f,\"c\":%.4f,"
+        Serial1.printf("{"
                        "\"ax\":%.2f,\"ay\":%.2f,\"az\":%.2f,"
                        "\"gx\":%.1f,\"gy\":%.1f,\"gz\":%.1f,"
                        "\"cliff\":%d,\"radar\":1,\"act\":\"%s\",\"alert\":\"%s\","
                        "\"radar_dist\":%d,\"radar_energy\":%d}\n",
-                       v, c,
                        ax_g, ay_g, az_g,
                        gx_d, gy_d, gz_d,
                        cliff ? 1 : 0,

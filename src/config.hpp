@@ -5,8 +5,8 @@
 
 namespace mambo {
 struct AppConfig {
-    static constexpr const char* kAlsaRecDevice  = "plughw:3,0";
-    static constexpr const char* kAlsaPlayDevice = "plughw:2,0";
+    static constexpr const char* kAlsaRecDevice  = "plughw:2,0";
+    static constexpr const char* kAlsaPlayDevice = "plughw:3,0";
 
     // API Keys
     static constexpr const char* kBaiduApiKey    = "mOEMA8FfryEAdeEsJ5cIMH0D";
@@ -39,7 +39,13 @@ struct AppConfig {
     static constexpr int kSilenceThreshold = 80;   // 低于此值视为静音
     static constexpr int kSilenceLimitMs   = 1000;
     static constexpr int kInputSize        = 640;
+
+    /** 本地 NLU 地址（与 dialog 中 kBackendLocalModels 的 host 一致，用于 DNS 兜底/覆盖） */
+    static constexpr const char* kLocalBackendHostname = "124.222.205.168";
+    /** 若希望用域名访问但解析失败，可填 IPv4；当前已直连 IP 时可留空 */
+    static constexpr const char* kLocalBackendIpOverride = "";
 };
+
 
 const std::vector<std::string> kEmotionNames = {
     "ZhongXing","KaiXin","JingYa","NanGuo","ShengQi","YanWu","KongJu","MiMang"

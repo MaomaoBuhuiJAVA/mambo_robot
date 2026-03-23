@@ -13,6 +13,8 @@
 #include <iostream>
 #include <cstdio>
 #include <csignal>
+#include <unistd.h>
+#include <sys/select.h>
 
 static std::atomic<bool> g_shutdown{false};
 static void sigHandler(int) { g_shutdown = true; }
@@ -28,14 +30,14 @@ int main() {
 
     mambo::VisionEngine vision;
     mambo::DialogSystem dialog(&serial, &web);
+    web.SetBackendHttpHandler([&dialog](const std::string& mode) { return dialog.HandleBackendHttp(mode); });
+    web.SetMuteCommandHandler([&dialog](const std::string& cmd) { dialog.HandleConsoleCommand(cmd); });
+    web.SetDiagBaiduDeepseekHandler([&dialog]() { return dialog.RunBaiduDeepseekDiagJson(); });
     dialog.Start();
+    std::cerr << "[Console] 输入 `1`(local) / `2`(baidu) / `toggle` 一键切换 ASR+LLM+TTS 后端；输入 `backend ?` 查看当前。\n";
 
     // 警报 TTS 播放（异步，不阻塞主循环）
-    auto playAlert = [](const std::string& text) {
-        std::thread([text]() {
-            mambo::TtsPlay(text, mambo::AppConfig::kAlsaPlayDevice);
-        }).detach();
-    };
+    auto playAlert = [&dialog](const std::string& text) { dialog.PlayAlertTts(text); };
 
     // 摄像头初始化
     cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
@@ -155,6 +157,7 @@ int main() {
 
     // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
+    auto last_fall_alert = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
     while (!g_shutdown) {
         cv::Rect box; bool hf; int fw, fh;
@@ -172,6 +175,21 @@ int main() {
 
         mambo::ChatState state = dialog.GetState();
 
+        // 非阻塞控制台：切换 ASR+LLM+TTS 后端
+        {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(STDIN_FILENO, &rfds);
+            timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 0;
+            int ret = select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv);
+            if (ret > 0 && FD_ISSET(STDIN_FILENO, &rfds)) {
+                std::string line;
+                if (std::getline(std::cin, line)) dialog.HandleConsoleCommand(line);
+            }
+        }
+
         // 轮询串口接收 ESP32 上报
         serial.Poll();
 
@@ -181,7 +199,11 @@ int main() {
             if (alert == "cliff") {
                 playAlert("啊！前面是悬崖，星宝~");
             } else if (alert == "fall") {
-                playAlert("啊！星宝要跌落了！");
+                auto now = std::chrono::steady_clock::now();
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fall_alert).count() >= 5000) {
+                    last_fall_alert = now;
+                    playAlert("啊！星宝要跌落了！");
+                }
             } else if (alert == "dizzy") {
                 web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
                 playAlert("别晃了，星宝好晕呀~");
@@ -202,6 +224,15 @@ int main() {
             std::string json = "{";
             json += "\"fps\":" + std::to_string(det_fps.load());
             json += ",\"state\":\"" + ss + "\"";
+            json += ",\"backend_selected\":\"" + std::string(dialog.GetBackendSelectedName()) + "\"";
+            json += ",\"backend_effective\":\"" + std::string(dialog.GetBackendEffectiveName()) + "\"";
+            json += ",\"backend_selected_asr_host\":\"" + std::string(dialog.GetSelectedAsrHost()) + "\"";
+            json += ",\"backend_selected_llm_url\":\"" + std::string(dialog.GetSelectedLlmUrl()) + "\"";
+            json += ",\"backend_selected_tts_url\":\"" + std::string(dialog.GetSelectedTtsUrl()) + "\"";
+            json += ",\"backend_effective_asr_host\":\"" + std::string(dialog.GetEffectiveAsrHost()) + "\"";
+            json += ",\"backend_effective_llm_url\":\"" + std::string(dialog.GetEffectiveLlmUrl()) + "\"";
+            json += ",\"backend_effective_tts_url\":\"" + std::string(dialog.GetEffectiveTtsUrl()) + "\"";
+            json += ",\"muted\":" + std::string(dialog.IsMuted() ? "true" : "false");
             if (!faces.empty()) {
                 char buf[128];
                 snprintf(buf, sizeof(buf), ",\"face\":{\"name\":\"%s\",\"emotion\":\"%s\",\"score\":%.2f}",
@@ -226,6 +257,9 @@ int main() {
 
             // 控制台打印 ── 香橙派
             std::cout << "\n┌─ 视觉 FPS:" << det_fps << "  状态:" << ss
+                      << "  后端:" << dialog.GetBackendSelectedName()
+                      << "/" << dialog.GetBackendEffectiveName()
+                      << "  静音:" << (dialog.IsMuted() ? "ON" : "OFF")
                       << "  🎤RMS:" << dialog.GetMicRms()
                       << "(阈值:" << mambo::AppConfig::kVoiceThreshold << ")";
             if (!faces.empty())
@@ -244,8 +278,6 @@ int main() {
             if (esp.valid) {
                 std::cout << std::fixed << std::setprecision(2);
                 std::cout << "\n└─ ESP32  "
-                          << "电压:" << esp.v << "V  "
-                          << "电流:" << esp.c * 1000 << "mA  "
                           << "加速度 X:" << esp.ax << " Y:" << esp.ay << " Z:" << esp.az << " g  "
                           << "陀螺 X:" << std::setprecision(1) << esp.gx
                           << " Y:" << esp.gy << " Z:" << esp.gz << " °/s  "
@@ -268,6 +300,7 @@ int main() {
     cap_cv.notify_all();
     capture_thread.join();
     vision_thread.join();
+    web.Stop();
     curl_global_cleanup();
     return 0;
 }

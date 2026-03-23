@@ -17,6 +17,10 @@ body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',ui-mono
 .sep{width:1px;height:20px;background:var(--border2)}
 .pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
   background:var(--bg3);border:1px solid var(--border);font-size:11px}
+.bbtn{border:none;border-radius:10px;background:var(--bg);border:1px solid var(--border);
+  color:var(--muted);font-size:10px;padding:1px 8px;cursor:pointer}
+.bbtn.active{color:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px #00e5ff44}
+.bbtn:active{transform:translateY(1px)}
 .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
 .dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
@@ -68,6 +72,21 @@ canvas{display:block;width:100%;height:100%}
   <div class="pill"><div class="dot off" id="dot-sse"></div><span id="lbl-sse">SSE 断开</span></div>
   <div class="pill"><div class="dot off" id="dot-esp"></div><span id="lbl-esp">ESP32</span></div>
   <div class="pill" id="state-pill"><div class="dot warn"></div><span id="lbl-state">等待中</span></div>
+  <div class="pill" id="backend-pill">
+    <span>NLU后端</span>
+    <button class="bbtn" id="btn-backend-local" onclick="setBackend('local')" title="124.222.205.168 自建全链路">local</button>
+    <button class="bbtn" id="btn-backend-baidu" onclick="setBackend('baidu')" title="百度ASR+百度TTS+DeepSeek（公网）">baidu</button>
+    <button class="bbtn" id="btn-backend-toggle" onclick="setBackend('toggle')" title="与另一线路切换">换</button>
+    <span id="lbl-backend-effective" style="color:var(--muted);margin-left:6px">-</span>
+  </div>
+  <div class="pill" id="mute-pill">
+    <span>声音</span>
+    <button class="bbtn" id="btn-mute" onclick="setMute('toggle')">静音</button>
+  </div>
+  <div class="pill" id="diag-pill">
+    <span>自检</span>
+    <button class="bbtn" id="btn-diag" onclick="runDiagBaiduDeepseek()">百度+DeepSeek</button>
+  </div>
   <div class="pill" id="alert-pill" style="display:none;border-color:var(--red)">
     <div class="dot err" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div>
     <span id="lbl-alert" style="color:var(--red)">-</span>
@@ -82,17 +101,10 @@ canvas{display:block;width:100%;height:100%}
 <div id="main">
 
   <!-- 左上：摄像头 -->
-  <div class="card" style="grid-column:1;grid-row:1">
+  <div class="card" style="grid-column:1;grid-row:1/3">
     <div class="card-hdr"><span class="icon">📷</span><span class="title">实时画面</span>
       <span class="badge" id="badge-cam">等待...</span></div>
     <div class="card-body"><img id="cam" src="/api/v1/video/stream" alt="camera feed"></div>
-  </div>
-
-  <!-- 左下：电压/电流历史曲线 -->
-  <div class="card" style="grid-column:1;grid-row:2">
-    <div class="card-hdr"><span class="icon">⚡</span><span class="title">电源监控</span>
-      <span class="badge"><span id="v-now">-</span>V · <span id="c-now">-</span>mA</span></div>
-    <div class="card-body"><canvas id="chart-canvas"></canvas></div>
   </div>
 
   <!-- 中上：雷达 + IMU -->
@@ -138,8 +150,6 @@ canvas{display:block;width:100%;height:100%}
     <div class="card" style="flex-shrink:0">
       <div class="card-hdr"><span class="icon">📊</span><span class="title">传感器</span></div>
       <div id="sensor-list">
-        <div class="srow"><span class="slabel">电压</span><span class="sval" id="s-v">-</span></div>
-        <div class="srow"><span class="slabel">电流</span><span class="sval" id="s-c">-</span></div>
         <div class="srow"><span class="slabel">加速度 X/Y/Z</span><span class="sval" id="s-acc">-</span></div>
         <div class="srow"><span class="slabel">陀螺 X/Y/Z</span><span class="sval" id="s-gyr">-</span></div>
         <div class="srow"><span class="slabel">悬崖检测</span><span class="sval" id="s-cliff">-</span></div>
@@ -172,8 +182,6 @@ canvas{display:block;width:100%;height:100%}
 // ═══════════════════════════════════════════════════════════
 // 数据存储
 // ═══════════════════════════════════════════════════════════
-const MAX_HIST = 120;
-const vHist = [], cHist = [];
 let lastEsp = null, lastStatus = null;
 let eyeX = 0, eyeY = 0, eyeTargetX = 0, eyeTargetY = 0;
 let radarDist = 0, radarStd = 0;
@@ -225,6 +233,94 @@ function showAlert(type) {
 const stateColors = {waiting:'var(--muted)',listening:'var(--cyan)',thinking:'var(--yellow)',speaking:'var(--green)'};
 const stateLabels = {waiting:'等待唤醒',listening:'🎤 聆听中',thinking:'🤔 思考中',speaking:'🔊 播报中'};
 
+function setBackend(mode) {
+  const localBtn = document.getElementById('btn-backend-local');
+  const baiduBtn = document.getElementById('btn-backend-baidu');
+  const toggleBtn = document.getElementById('btn-backend-toggle');
+  [localBtn, baiduBtn, toggleBtn].forEach(b => { if (b) b.disabled = true; });
+  fetch('/backend?mode=' + encodeURIComponent(mode))
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok === false && j.error) {
+        log('后端切换失败: ' + j.error, 'e');
+        return;
+      }
+      const sel = j.backend_selected || j.selected;
+      const eff = j.backend_effective || j.effective;
+      paintBackendEffective(sel, eff);
+      paintBackendEndpoint(j);
+      log('NLU 后端: 已选 ' + (sel || '-') + (eff && eff !== sel ? ' · 实际 ' + eff : ''), 'g');
+    })
+    .catch(e => { log('后端请求失败: ' + e, 'e'); })
+    .finally(() => { [localBtn, baiduBtn, toggleBtn].forEach(b => { if (b) b.disabled = false; }); });
+}
+
+/** 进入页面时拉一次当前后端，避免仅靠 SSE 首包延迟 */
+function refreshBackendStatus() {
+  fetch('/backend')
+    .then(r => r.json())
+    .then(j => {
+      if (j.backend_selected) paintBackendEffective(j.backend_selected, j.backend_effective);
+      paintBackendEndpoint(j);
+    })
+    .catch(()=>{});
+}
+refreshBackendStatus();
+
+function setMute(mode) {
+  fetch('/mute?mode=' + encodeURIComponent(mode)).catch(()=>{});
+}
+
+function runDiagBaiduDeepseek() {
+  const btn = document.getElementById('btn-diag');
+  if (btn) btn.classList.add('active');
+  fetch('/diag/baidu_deepseek')
+    .then(r => r.json())
+    .then(j => {
+      log('自检: ' + JSON.stringify(j), j.ok ? 'g' : 'e');
+    })
+    .catch(e => { log('自检失败: ' + e, 'e'); })
+    .finally(() => { if (btn) btn.classList.remove('active'); });
+}
+
+function paintBackend(backend) {
+  const b = (backend || '').toLowerCase();
+  const local = document.getElementById('btn-backend-local');
+  const baidu = document.getElementById('btn-backend-baidu');
+  if (local) local.classList.toggle('active', b === 'local');
+  if (baidu) baidu.classList.toggle('active', b === 'baidu' || b === 'baidu_deepseek');
+}
+
+function paintBackendEffective(selected, effective) {
+  const s = (selected || '').toLowerCase();
+  const e = (effective || '').toLowerCase();
+  paintBackend(s);
+  const lbl = document.getElementById('lbl-backend-effective');
+  if (!lbl) return;
+  if (!e) { lbl.textContent = '-'; return; }
+  lbl.textContent = (e === s) ? '' : ('实际:' + e);
+}
+
+function paintBackendEndpoint(d) {
+  const pill = document.getElementById('backend-pill');
+  if (!pill) return;
+  const sAsr = d.backend_selected_asr_host || '-';
+  const eAsr = d.backend_effective_asr_host || '-';
+  const sLlm = d.backend_selected_llm_url || '-';
+  const eLlm = d.backend_effective_llm_url || '-';
+  const sTts = d.backend_selected_tts_url || '-';
+  const eTts = d.backend_effective_tts_url || '-';
+  pill.title = `selected: asr=${sAsr}\nselected: llm=${sLlm}\nselected: tts=${sTts}\n\neffective: asr=${eAsr}\neffective: llm=${eLlm}\neffective: tts=${eTts}`;
+}
+
+function paintMute(muted) {
+  const btn = document.getElementById('btn-mute');
+  if (!btn) return;
+  const on = !!muted;
+  btn.classList.toggle('active', on);
+  btn.textContent = on ? '静音' : '有声';
+}
+
 function connectStatus() {
   const es = new EventSource('/status');
   es.onopen = () => {
@@ -252,6 +348,13 @@ function connectStatus() {
         document.getElementById('lbl-state').textContent = lbl;
         document.getElementById('state-pill').style.setProperty('--c', stateColors[d.state] || 'var(--muted)');
       }
+      if (d.backend_selected || d.backend_effective) {
+        paintBackendEffective(d.backend_selected, d.backend_effective);
+      } else if (d.backend) {
+        paintBackend(d.backend);
+      }
+      paintBackendEndpoint(d);
+      if (d.muted != null) paintMute(d.muted);
 
       // 人脸
       if (d.face) {
@@ -268,18 +371,6 @@ function connectStatus() {
         lastEsp = e;
         document.getElementById('dot-esp').className = 'dot on';
         document.getElementById('lbl-esp').textContent = 'ESP32';
-
-        // 电源
-        const vv = parseFloat(e.v) || 0;
-        const cc = (parseFloat(e.c) || 0) * 1000;
-        document.getElementById('v-now').textContent = vv.toFixed(2);
-        document.getElementById('c-now').textContent = cc.toFixed(0);
-        sv('s-v', vv.toFixed(2) + ' V', vv < 7.0 ? 'err' : vv < 7.5 ? 'warn' : 'ok');
-        sv('s-c', cc.toFixed(0) + ' mA', cc > 400 ? 'warn' : 'ok');
-
-        // 历史
-        vHist.push(vv); cHist.push(cc);
-        if (vHist.length > MAX_HIST) { vHist.shift(); cHist.shift(); }
 
         // IMU
         imuAx = parseFloat(e.ax)||0; imuAy = parseFloat(e.ay)||0; imuAz = parseFloat(e.az)||0;
@@ -378,65 +469,6 @@ function sv(id, v, cls='') {
   el.textContent = v;
   el.className = 'sval' + (cls ? ' ' + cls : '');
 }
-
-// ═══════════════════════════════════════════════════════════
-// Canvas: 电源历史曲线
-// ═══════════════════════════════════════════════════════════
-const chartCanvas = document.getElementById('chart-canvas');
-const chartCtx = chartCanvas.getContext('2d');
-
-function drawChart() {
-  const W = chartCanvas.width  = chartCanvas.offsetWidth;
-  const H = chartCanvas.height = chartCanvas.offsetHeight;
-  chartCtx.clearRect(0, 0, W, H);
-  if (vHist.length < 2) { requestAnimationFrame(drawChart); return; }
-
-  const pad = {t:16, b:24, l:44, r:12};
-  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
-
-  // 网格
-  chartCtx.strokeStyle = '#1c2128'; chartCtx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.t + ch * i / 4;
-    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(pad.l + cw, y); chartCtx.stroke();
-  }
-
-  // 电压曲线 (6.5~9V)
-  const vMin = 6.5, vMax = 9.0;
-  chartCtx.beginPath(); chartCtx.strokeStyle = '#00e5ff'; chartCtx.lineWidth = 1.5;
-  vHist.forEach((v, i) => {
-    const x = pad.l + cw * i / (MAX_HIST - 1);
-    const y = pad.t + ch * (1 - (v - vMin) / (vMax - vMin));
-    i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
-  });
-  chartCtx.stroke();
-
-  // 电流曲线 (0~600mA)
-  const cMin = 0, cMax = 600;
-  chartCtx.beginPath(); chartCtx.strokeStyle = '#e3b341'; chartCtx.lineWidth = 1.5;
-  cHist.forEach((c, i) => {
-    const x = pad.l + cw * i / (MAX_HIST - 1);
-    const y = pad.t + ch * (1 - (c - cMin) / (cMax - cMin));
-    i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
-  });
-  chartCtx.stroke();
-
-  // Y轴标签
-  chartCtx.fillStyle = '#8b949e'; chartCtx.font = '9px monospace'; chartCtx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.t + ch * i / 4;
-    const vLabel = (vMax - (vMax - vMin) * i / 4).toFixed(1);
-    chartCtx.fillText(vLabel + 'V', pad.l - 3, y + 3);
-  }
-
-  // 图例
-  chartCtx.textAlign = 'left'; chartCtx.font = '9px monospace';
-  chartCtx.fillStyle = '#00e5ff'; chartCtx.fillText('电压', pad.l + 4, pad.t + 10);
-  chartCtx.fillStyle = '#e3b341'; chartCtx.fillText('电流', pad.l + 40, pad.t + 10);
-
-  requestAnimationFrame(drawChart);
-}
-drawChart();
 
 // ═══════════════════════════════════════════════════════════
 // Canvas: 雷达扇形图
