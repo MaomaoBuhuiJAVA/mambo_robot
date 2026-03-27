@@ -15,11 +15,383 @@
 #include <csignal>
 #include <cmath>
 #include <cctype>
+#include <sstream>
+#include <vector>
+#include <utility>
 #include <unistd.h>
 #include <sys/select.h>
+#include <sys/wait.h>
 
 static std::atomic<bool> g_shutdown{false};
 static void sigHandler(int) { g_shutdown = true; }
+
+static int ExtractPercentFromAmixer(const std::string& text) {
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '%') continue;
+        size_t b = i;
+        while (b > 0 && std::isdigit((unsigned char)text[b - 1])) --b;
+        if (b < i) {
+            try {
+                int v = std::stoi(text.substr(b, i - b));
+                if (v >= 0 && v <= 100) return v;
+            } catch (...) {}
+        }
+    }
+    return -1;
+}
+
+static std::string RunCommand(const std::string& cmd) {
+    std::string out;
+    char buf[256];
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) return out;
+    while (fgets(buf, sizeof(buf), fp)) out += buf;
+    pclose(fp);
+    return out;
+}
+
+struct CmdResult {
+    int exit_code = -1;
+    std::string output;
+};
+
+static CmdResult RunCommandWithCode(const std::string& cmd) {
+    CmdResult r;
+    char buf[256];
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) return r;
+    while (fgets(buf, sizeof(buf), fp)) r.output += buf;
+    int status = pclose(fp);
+    if (status >= 0 && WIFEXITED(status)) r.exit_code = WEXITSTATUS(status);
+    return r;
+}
+
+static std::string JsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 16);
+    for (char c : s) {
+        switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+static std::string GetAlsaCardIndexFromPlayDevice() {
+    const std::string dev = mambo::AppConfig::kAlsaPlayDevice ? mambo::AppConfig::kAlsaPlayDevice : "";
+    // 期望格式：plughw:3,0 / hw:3,0
+    size_t p = dev.find(':');
+    if (p == std::string::npos) return "";
+    ++p;
+    size_t q = p;
+    while (q < dev.size() && std::isdigit((unsigned char)dev[q])) ++q;
+    if (q == p) return "";
+    return dev.substr(p, q - p);
+}
+
+static std::string DetectPulseSinkName() {
+    // 先取默认 sink
+    {
+        const std::string info = RunCommand("pactl info 2>/dev/null");
+        auto p = info.find("Default Sink:");
+        if (p != std::string::npos) {
+            p += std::string("Default Sink:").size();
+            while (p < info.size() && std::isspace((unsigned char)info[p])) ++p;
+            size_t e = p;
+            while (e < info.size() && info[e] != '\n' && info[e] != '\r') ++e;
+            std::string name = info.substr(p, e - p);
+            if (!name.empty()) return name;
+        }
+    }
+    // 兜底：取第一个 sink 的 name（第二列）
+    {
+        const std::string sinks = RunCommand("pactl list sinks short 2>/dev/null");
+        size_t line_start = 0;
+        while (line_start < sinks.size()) {
+            size_t line_end = sinks.find('\n', line_start);
+            if (line_end == std::string::npos) line_end = sinks.size();
+            std::string line = sinks.substr(line_start, line_end - line_start);
+            if (!line.empty()) {
+                std::istringstream iss(line);
+                std::string id, name;
+                if (iss >> id >> name) return name;
+            }
+            line_start = line_end + 1;
+        }
+    }
+    return "";
+}
+
+static std::pair<std::string, std::string> DetectPulseSinkIdAndName() {
+    const std::string sinks = RunCommand("pactl list sinks short 2>/dev/null");
+    size_t line_start = 0;
+    while (line_start < sinks.size()) {
+        size_t line_end = sinks.find('\n', line_start);
+        if (line_end == std::string::npos) line_end = sinks.size();
+        std::string line = sinks.substr(line_start, line_end - line_start);
+        if (!line.empty()) {
+            std::istringstream iss(line);
+            std::string id, name;
+            if (iss >> id >> name) return {id, name};
+        }
+        line_start = line_end + 1;
+    }
+    return {"", ""};
+}
+
+static int ExtractPercentFromWpctl(const std::string& text) {
+    // 例: "Volume: 0.42 [MUTED]"
+    auto p = text.find("Volume:");
+    if (p == std::string::npos) return -1;
+    p += 7;
+    while (p < text.size() && std::isspace((unsigned char)text[p])) ++p;
+    size_t e = p;
+    bool dot_seen = false;
+    while (e < text.size()) {
+        char c = text[e];
+        if (std::isdigit((unsigned char)c)) { ++e; continue; }
+        if (c == '.' && !dot_seen) { dot_seen = true; ++e; continue; }
+        break;
+    }
+    if (e == p) return -1;
+    try {
+        double v = std::stod(text.substr(p, e - p));
+        if (v >= 0.0 && v <= 10.0) { // 允许超过1.0的放大值，后面裁剪
+            int pct = (int)std::round(v * 100.0);
+            return std::max(0, std::min(100, pct));
+        }
+    } catch (...) {}
+    return -1;
+}
+
+static std::vector<std::string> DetectMixerControls(const std::string& card_index = "") {
+    const std::string cmd = card_index.empty()
+        ? "amixer scontrols 2>/dev/null"
+        : ("amixer -c " + card_index + " scontrols 2>/dev/null");
+    const std::string out = RunCommand(cmd);
+    std::vector<std::string> controls;
+    size_t pos = 0;
+    while (true) {
+        size_t p = out.find('\'', pos);
+        if (p == std::string::npos) break;
+        size_t q = out.find('\'', p + 1);
+        if (q == std::string::npos) break;
+        std::string c = out.substr(p + 1, q - p - 1);
+        if (!c.empty()) controls.push_back(c);
+        pos = q + 1;
+    }
+    return controls;
+}
+
+static std::string EscapeDoubleQuotes(std::string s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        if (ch == '"') out += "\\\"";
+        else out += ch;
+    }
+    return out;
+}
+
+static int GetSpeakerVolumePercent() {
+    // 0) 优先直接控制 TTS 播放设备所在 ALSA 卡（例如 plughw:3,0）
+    const std::string play_card = GetAlsaCardIndexFromPlayDevice();
+    if (!play_card.empty()) {
+        const std::vector<std::string> preferred = {
+            "Master", "Speaker", "Headphone", "PCM", "Playback", "Lineout"
+        };
+        std::vector<std::string> controls = preferred;
+        for (const auto& c : DetectMixerControls(play_card)) {
+            if (std::find(controls.begin(), controls.end(), c) == controls.end()) controls.push_back(c);
+        }
+        for (const auto& c : controls) {
+            const std::string out = RunCommand("amixer -c " + play_card + " sget \"" + EscapeDoubleQuotes(c) + "\" 2>/dev/null");
+            int v = ExtractPercentFromAmixer(out);
+            if (v >= 0) return v;
+        }
+    }
+
+    // 1) PulseAudio / PipeWire
+    {
+        std::string sink = DetectPulseSinkName();
+        if (!sink.empty()) {
+            const std::string out = RunCommand("pactl get-sink-volume \"" + EscapeDoubleQuotes(sink) + "\" 2>/dev/null");
+            int v = ExtractPercentFromAmixer(out);
+            if (v >= 0) return v;
+        }
+        const std::string out_default = RunCommand("pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null");
+        int v_default = ExtractPercentFromAmixer(out_default);
+        if (v_default >= 0) return v_default;
+    }
+    {
+        const std::string out = RunCommand("wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null");
+        int v = ExtractPercentFromWpctl(out);
+        if (v >= 0) return v;
+    }
+
+    // 2) ALSA 兜底
+    const std::vector<std::string> preferred = {
+        "Master", "Speaker", "Headphone", "PCM", "Playback", "Lineout"
+    };
+    std::vector<std::string> controls = preferred;
+    for (const auto& c : DetectMixerControls()) {
+        if (std::find(controls.begin(), controls.end(), c) == controls.end()) controls.push_back(c);
+    }
+    for (const auto& c : controls) {
+        const std::string out = RunCommand("amixer sget \"" + EscapeDoubleQuotes(c) + "\" 2>/dev/null");
+        int v = ExtractPercentFromAmixer(out);
+        if (v >= 0) return v;
+    }
+    return 70; // 回退默认值
+}
+
+static bool SetSpeakerVolumePercent(int volume_percent) {
+    const int v = std::max(0, std::min(100, volume_percent));
+    auto verify = [&](int target) {
+        int now = GetSpeakerVolumePercent();
+        return std::abs(now - target) <= 2;
+    };
+    // 0) 优先按 TTS 播放设备所在 ALSA 卡设置
+    const std::string play_card = GetAlsaCardIndexFromPlayDevice();
+    if (!play_card.empty()) {
+        const std::vector<std::string> preferred = {
+            "Master", "Speaker", "Headphone", "PCM", "Playback", "Lineout"
+        };
+        std::vector<std::string> controls = preferred;
+        for (const auto& c : DetectMixerControls(play_card)) {
+            if (std::find(controls.begin(), controls.end(), c) == controls.end()) controls.push_back(c);
+        }
+        for (const auto& c : controls) {
+            const std::string cmd = "amixer -c " + play_card + " sset \"" + EscapeDoubleQuotes(c) + "\" " + std::to_string(v) + "% >/dev/null 2>&1";
+            if (std::system(cmd.c_str()) == 0 && verify(v)) return true;
+        }
+    }
+
+    const auto sink_pair = DetectPulseSinkIdAndName();
+    const std::string sink_id = sink_pair.first;
+    const std::string sink_name = sink_pair.second;
+    const std::vector<std::string> pulse_targets = {
+        sink_name.empty() ? "" : ("\"" + EscapeDoubleQuotes(sink_name) + "\""),
+        sink_id,
+        "@DEFAULT_SINK@"
+    };
+
+    // 1) PulseAudio / PipeWire
+    for (const auto& t : pulse_targets) {
+        if (t.empty()) continue;
+        const std::string cmd_set = "pactl set-sink-volume " + t + " " + std::to_string(v) + "% >/dev/null 2>&1";
+        const std::string cmd_unmute = "pactl set-sink-mute " + t + " 0 >/dev/null 2>&1";
+        if (std::system(cmd_set.c_str()) == 0) {
+            std::system(cmd_unmute.c_str());
+            if (verify(v)) return true;
+        }
+    }
+    {
+        const std::string cmd = "wpctl set-volume @DEFAULT_AUDIO_SINK@ " + std::to_string(v) + "% >/dev/null 2>&1";
+        if (std::system(cmd.c_str()) == 0 && verify(v)) return true;
+    }
+
+    // 2) ALSA 兜底
+    const std::vector<std::string> preferred = {
+        "Master", "Speaker", "Headphone", "PCM", "Playback", "Lineout"
+    };
+    std::vector<std::string> controls = preferred;
+    for (const auto& c : DetectMixerControls()) {
+        if (std::find(controls.begin(), controls.end(), c) == controls.end()) controls.push_back(c);
+    }
+    for (const auto& c : controls) {
+        const std::string cmd = "amixer sset \"" + EscapeDoubleQuotes(c) + "\" " + std::to_string(v) + "% >/dev/null 2>&1";
+        if (std::system(cmd.c_str()) == 0 && verify(v)) return true;
+    }
+    return false;
+}
+
+static std::string BuildSpeakerDebugJson(const std::string& value) {
+    const int before = GetSpeakerVolumePercent();
+    int target = before;
+    bool has_target = false;
+    if (!value.empty()) {
+        has_target = true;
+        try { target = std::stoi(value); } catch (...) {}
+        target = std::max(0, std::min(100, target));
+    }
+
+    const auto sink_pair = DetectPulseSinkIdAndName();
+    const std::string sink_id = sink_pair.first;
+    const std::string sink_name = sink_pair.second;
+    const std::string play_card = GetAlsaCardIndexFromPlayDevice();
+
+    const CmdResult info = RunCommandWithCode("pactl info 2>&1");
+    const CmdResult sinks = RunCommandWithCode("pactl list sinks short 2>&1");
+    const CmdResult ctrls = RunCommandWithCode("amixer scontrols 2>&1");
+
+    std::vector<std::string> attempt_cmds;
+    std::vector<CmdResult> attempt_results;
+    bool applied = false;
+
+    if (has_target) {
+        auto run_attempt = [&](const std::string& cmd) {
+            if (applied) return;
+            attempt_cmds.push_back(cmd);
+            CmdResult r = RunCommandWithCode(cmd + " 2>&1");
+            attempt_results.push_back(r);
+            if (r.exit_code == 0) {
+                int after_try = GetSpeakerVolumePercent();
+                if (std::abs(after_try - target) <= 2) applied = true;
+            }
+        };
+
+        if (!sink_name.empty()) {
+            run_attempt("pactl set-sink-volume \"" + EscapeDoubleQuotes(sink_name) + "\" " + std::to_string(target) + "%");
+            run_attempt("pactl set-sink-mute \"" + EscapeDoubleQuotes(sink_name) + "\" 0");
+        }
+        if (!sink_id.empty()) {
+            run_attempt("pactl set-sink-volume " + sink_id + " " + std::to_string(target) + "%");
+            run_attempt("pactl set-sink-mute " + sink_id + " 0");
+        }
+        run_attempt("pactl set-sink-volume @DEFAULT_SINK@ " + std::to_string(target) + "%");
+        run_attempt("pactl set-sink-mute @DEFAULT_SINK@ 0");
+        run_attempt("wpctl set-volume @DEFAULT_AUDIO_SINK@ " + std::to_string(target) + "%");
+    }
+
+    const int after = GetSpeakerVolumePercent();
+    std::ostringstream oss;
+    oss << "{"
+        << "\"ok\":" << ((has_target ? applied : true) ? "true" : "false") << ","
+        << "\"before\":" << before << ","
+        << "\"after\":" << after << ","
+        << "\"target\":" << target << ","
+        << "\"sink_detected\":{"
+            << "\"id\":\"" << JsonEscape(sink_id) << "\","
+            << "\"name\":\"" << JsonEscape(sink_name) << "\""
+        << "},"
+        << "\"alsa_play_card\":\"" << JsonEscape(play_card) << "\","
+        << "\"commands\":[";
+    for (size_t i = 0; i < attempt_cmds.size(); ++i) {
+        if (i) oss << ",";
+        oss << "{"
+            << "\"cmd\":\"" << JsonEscape(attempt_cmds[i]) << "\","
+            << "\"exit_code\":" << attempt_results[i].exit_code << ","
+            << "\"output\":\"" << JsonEscape(attempt_results[i].output) << "\""
+            << "}";
+    }
+    oss << "],"
+        << "\"probe\":{"
+            << "\"pactl_info_exit\":" << info.exit_code << ","
+            << "\"pactl_info\":\"" << JsonEscape(info.output) << "\","
+            << "\"pactl_sinks_exit\":" << sinks.exit_code << ","
+            << "\"pactl_sinks\":\"" << JsonEscape(sinks.output) << "\","
+            << "\"amixer_scontrols_exit\":" << ctrls.exit_code << ","
+            << "\"amixer_scontrols\":\"" << JsonEscape(ctrls.output) << "\""
+        << "}"
+        << "}";
+    return oss.str();
+}
 
 int main() {
     std::signal(SIGINT,  sigHandler);
@@ -36,6 +408,30 @@ int main() {
     mambo::DialogSystem dialog(&serial, &web);
     web.SetBackendHttpHandler([&dialog](const std::string& mode) { return dialog.HandleBackendHttp(mode); });
     web.SetMuteCommandHandler([&dialog](const std::string& cmd) { dialog.HandleConsoleCommand(cmd); });
+    web.SetSpeakerVolumeHandler([&](const std::string& value) -> std::string {
+        int current = GetSpeakerVolumePercent();
+        bool changed = false;
+        bool ok = true;
+        int target = current;
+        if (!value.empty()) {
+            try { target = std::stoi(value); } catch (...) {}
+            target = std::max(0, std::min(100, target));
+            changed = SetSpeakerVolumePercent(target);
+            current = GetSpeakerVolumePercent();
+            ok = changed;
+        }
+        std::ostringstream oss;
+        oss << "{"
+            << "\"ok\":" << (ok ? "true" : "false") << ","
+            << "\"volume\":" << current << ","
+            << "\"changed\":" << (changed ? "true" : "false") << ","
+            << "\"target\":" << target
+            << "}";
+        return oss.str();
+    });
+    web.SetSpeakerDebugHandler([&](const std::string& value) -> std::string {
+        return BuildSpeakerDebugJson(value);
+    });
     web.SetDiagBaiduDeepseekHandler([&dialog]() { return dialog.RunBaiduDeepseekDiagJson(); });
     web.SetClearMemoryHandler([&dialog]() { return dialog.ClearConversationMemoryJson(); });
     web.SetMotionModeHandler([&](const std::string& name, const std::string& value) -> std::string {
@@ -67,17 +463,22 @@ int main() {
     auto playAlert = [&dialog](const std::string& text) { dialog.PlayAlertTts(text); };
 
     // 摄像头初始化
-    cv::VideoCapture cap(mambo::AppConfig::kCameraIndex);
-    if (!cap.isOpened()) {
+    cv::VideoCapture cap;
+    auto open_camera = [&cap]() -> bool {
+        if (cap.isOpened()) cap.release();
+        if (!cap.open(mambo::AppConfig::kCameraIndex)) return false;
+        cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
+        cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
+        cap.set(cv::CAP_PROP_FRAME_WIDTH,  mambo::AppConfig::kCameraWidth);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
+        cap.set(cv::CAP_PROP_FPS,          mambo::AppConfig::kCameraTargetFps);
+        return cap.isOpened();
+    };
+    if (!open_camera()) {
         std::cerr << "[Error] 无法打开摄像头 index=" << mambo::AppConfig::kCameraIndex << std::endl;
         curl_global_cleanup();
         return 1;
     }
-    cap.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G'));
-    cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-    cap.set(cv::CAP_PROP_FRAME_WIDTH,  mambo::AppConfig::kCameraWidth);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, mambo::AppConfig::kCameraHeight);
-    cap.set(cv::CAP_PROP_FPS,          mambo::AppConfig::kCameraTargetFps);
 
     // 共享帧（摄像头线程写，推理线程读）
     std::mutex              cap_mtx;
@@ -97,10 +498,30 @@ int main() {
 
     // 线程1：只读摄像头 + 推流，不做任何推理（保证流帧率稳定）
     std::thread capture_thread([&]() {
+        int empty_count = 0;
+        auto last_reopen = std::chrono::steady_clock::now() - std::chrono::seconds(5);
         while (running) {
             cv::Mat frame;
             cap >> frame;
-            if (frame.empty()) continue;
+            if (frame.empty()) {
+                ++empty_count;
+                // 连续空帧说明 /dev/video0 卡住，尝试重开摄像头恢复推流
+                if (empty_count >= 20 &&
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - last_reopen).count() > 1500) {
+                    last_reopen = std::chrono::steady_clock::now();
+                    std::cerr << "[Camera] 捕获空帧，尝试重新打开 /dev/video" << mambo::AppConfig::kCameraIndex << "...\n";
+                    if (open_camera()) {
+                        std::cerr << "[Camera] 摄像头恢复成功\n";
+                        empty_count = 0;
+                    } else {
+                        std::cerr << "[Camera] 摄像头恢复失败，稍后重试\n";
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                continue;
+            }
+            empty_count = 0;
 
             web.PushVideoFrame(frame); // 异步编码，不阻塞
 

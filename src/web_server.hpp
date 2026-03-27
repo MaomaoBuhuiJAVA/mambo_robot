@@ -26,6 +26,8 @@ class WebServer {
     std::atomic<bool> running_{false};
     std::function<std::string(const std::string&)> backend_http_;
     std::function<void(const std::string&)> mute_cmd_;
+    std::function<std::string(const std::string&)> speaker_volume_http_;
+    std::function<std::string(const std::string&)> speaker_debug_http_;
     std::function<std::string()> diag_baidu_deepseek_;
     std::function<std::string()> clear_memory_;
     std::function<std::string(const std::string&, const std::string&)> motion_mode_http_;
@@ -88,6 +90,8 @@ class WebServer {
 public:
     void SetBackendHttpHandler(std::function<std::string(const std::string&)> cb) { backend_http_ = std::move(cb); }
     void SetMuteCommandHandler(std::function<void(const std::string&)> cb) { mute_cmd_ = std::move(cb); }
+    void SetSpeakerVolumeHandler(std::function<std::string(const std::string&)> cb) { speaker_volume_http_ = std::move(cb); }
+    void SetSpeakerDebugHandler(std::function<std::string(const std::string&)> cb) { speaker_debug_http_ = std::move(cb); }
     void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
     void SetClearMemoryHandler(std::function<std::string()> cb) { clear_memory_ = std::move(cb); }
     void SetMotionModeHandler(std::function<std::string(const std::string&, const std::string&)> cb) { motion_mode_http_ = std::move(cb); }
@@ -468,6 +472,55 @@ public:
             else if (mode == "off" || mode == "0" || mode == "false") mute_cmd_("mute off");
             else if (mode == "toggle" || mode == "t") mute_cmd_("mute");
             res.set_content("{\"ok\":true}", "application/json");
+        });
+        // 扬声器音量控制：GET 查询，GET/POST 设置
+        // GET  /api/v1/audio/volume
+        // GET  /api/v1/audio/volume?value=65
+        // POST /api/v1/audio/volume {"value":"65"}
+        auto handle_volume = [this](const std::string& value, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!speaker_volume_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            res.set_content(speaker_volume_http_(value), "application/json");
+        };
+        svr.Get("/api/v1/audio/volume", [handle_volume](const httplib::Request& req, httplib::Response& res) {
+            std::string value = req.has_param("value") ? req.get_param_value("value") : "";
+            handle_volume(value, res);
+        });
+        svr.Post("/api/v1/audio/volume", [this, handle_volume](const httplib::Request& req, httplib::Response& res) {
+            std::string value = ExtractJsonStringField(req.body, "value");
+            if (value.empty()) {
+                int v = ExtractJsonIntField(req.body, "value", -1);
+                if (v >= 0) value = std::to_string(v);
+            }
+            handle_volume(value, res);
+        });
+        // 音量调试接口：返回 sink 探测、命令执行与前后音量
+        // GET  /api/v1/audio/debug
+        // GET  /api/v1/audio/debug?value=35
+        auto handle_volume_debug = [this](const std::string& value, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!speaker_debug_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_debug_handler\"}", "application/json");
+                return;
+            }
+            res.set_content(speaker_debug_http_(value), "application/json");
+        };
+        svr.Get("/api/v1/audio/debug", [handle_volume_debug](const httplib::Request& req, httplib::Response& res) {
+            std::string value = req.has_param("value") ? req.get_param_value("value") : "";
+            handle_volume_debug(value, res);
+        });
+        svr.Post("/api/v1/audio/debug", [this, handle_volume_debug](const httplib::Request& req, httplib::Response& res) {
+            std::string value = ExtractJsonStringField(req.body, "value");
+            if (value.empty()) {
+                int v = ExtractJsonIntField(req.body, "value", -1);
+                if (v >= 0) value = std::to_string(v);
+            }
+            handle_volume_debug(value, res);
         });
 
         svr.Get("/diag/baidu_deepseek", [this](const httplib::Request&, httplib::Response& res) {

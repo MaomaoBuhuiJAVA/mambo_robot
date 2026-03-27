@@ -798,41 +798,9 @@ private:
         bool is_recording = false; int silence_ms = 0;
 
         while (true) {
-            // thinking/speaking 时持续监听，检测到声音就打断
+            // 关闭打断功能：thinking/speaking 期间不做麦克风打断检测
             if (chat_state_ == ChatState::kSpeaking ||
                 chat_state_ == ChatState::kThinking) {
-                int res = snd_pcm_readi(h_rec, buffer, 512);
-                if (res > 0) {
-                    long long sum = 0;
-                    for (int i = 0; i < res; i++) sum += std::abs(buffer[i]);
-                    int rms = sum / res;
-                    mic_rms_ = rms;
-                    // speaking 时阈值更高（避免扬声器回声误触发），thinking 时用正常阈值
-                    int threshold = (chat_state_ == ChatState::kSpeaking)
-                                    ? AppConfig::kVoiceThreshold * 4
-                                    : AppConfig::kVoiceThreshold;
-                    if (rms > threshold) {
-                        std::cerr << "[Audio] 检测到打断 rms=" << rms << " threshold=" << threshold << "\n";
-                        interrupt_ = true;
-                        system("pkill -f 'aplay' 2>/dev/null; pkill -f 'sox' 2>/dev/null");
-                        // thinking 状态：LLM 请求阻塞无法 join，直接 detach 让它自己结束
-                        // speaking 状态：TTS 已被 pkill 杀掉，join 很快
-                        if (chat_state_ == ChatState::kSpeaking) {
-                            if (process_thread_.joinable()) process_thread_.join();
-                        } else {
-                            if (process_thread_.joinable()) process_thread_.detach();
-                        }
-                        // 等扬声器声音消散，清空麦克风缓冲区
-                        usleep(500000); // 500ms
-                        snd_pcm_drop(h_rec);
-                        snd_pcm_prepare(h_rec);
-                        chat_state_ = ChatState::kListening;
-                        interrupt_ = false;
-                        is_recording = true;
-                        record_buf.clear();
-                        silence_ms = 0;
-                    }
-                }
                 usleep(10000);
                 continue;
             }

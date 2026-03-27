@@ -93,10 +93,10 @@
   </style>
 </head>
 <body class="h-screen flex">
-  <aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#0b0c1f]/80 backdrop-blur-2xl w-72 rounded-r-[3rem] shadow-[20px_0_40px_rgba(14,12,31,0.6)]">
-    <div class="px-8 mb-10 flex flex-col items-center">
+  <aside class="fixed left-0 top-0 h-full flex flex-col py-6 z-40 bg-[#0b0c1f]/80 backdrop-blur-2xl w-52 rounded-r-[2.5rem] shadow-[20px_0_40px_rgba(14,12,31,0.6)]">
+    <div class="px-6 mb-8 flex flex-col items-center">
       <div class="relative mb-4">
-        <div class="w-20 h-20 rounded-full bg-primary/20 p-1 ring-2 ring-primary/30">
+        <div class="w-16 h-16 rounded-full bg-primary/20 p-1 ring-2 ring-primary/30">
           <img class="w-full h-full object-cover rounded-full" alt="star gem" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkBfR0cIxz8Wyfs_c8gYOpjTAKck9djuVr-ht0qTYLlO4QvMN3BMuFhIgJeLz4-vhto1ODbTufSCxwwKYM8KIdA0xJLV4AKapr3oqMlKkBHoV4axs__NXQPosD0ruTMo4rYPzWA971_rQvfJJQrrTgklZIISVAyi84e7b8cM2MfuApIbCpiUbM_dM4xskjPreCICLbIhp6bg_SGmOFC3zPpOSAJ2CyAVWnbLlhjV88OznVKUvNmkUhnOkJyYoy-TycNoWU9qQ9eg" />
         </div>
         <div class="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-4 border-[#0b0c1f] rounded-full"></div>
@@ -104,20 +104,20 @@
       <h1 class="text-lg font-black text-yellow-400">星宝 Star Gem</h1>
       <p class="text-slate-400 text-xs mt-1">你的星空伙伴</p>
     </div>
-    <nav class="flex-1 px-4 space-y-2">
-      <a class="flex items-center gap-4 bg-yellow-400/10 text-yellow-400 rounded-full px-6 py-4 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
-      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
-      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
-      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
+    <nav class="flex-1 px-3 space-y-2">
+      <a class="flex items-center gap-3 bg-yellow-400/10 text-yellow-400 rounded-full px-4 py-3 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
+      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
+      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
+      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
     </nav>
-    <div class="px-6 mt-auto">
+    <div class="px-4 mt-auto">
       <button id="btn-stop-all" class="w-full bg-error text-[#450900] py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all">
         <span class="material-symbols-outlined">emergency</span>Emergency Stop
       </button>
     </div>
   </aside>
 
-  <main class="flex-1 ml-72 p-6 flex flex-col gap-6 overflow-hidden">
+  <main class="flex-1 ml-52 p-6 flex flex-col gap-6 overflow-hidden">
     <header class="flex justify-between items-center w-full px-4 py-2 bg-slate-800/20 rounded-full backdrop-blur-xl">
       <div class="flex items-center gap-3">
         <div class="flex p-1 bg-surface-container rounded-full">
@@ -126,6 +126,11 @@
         </div>
       </div>
       <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 px-3 py-2 rounded-full bg-surface-container">
+          <span class="material-symbols-outlined text-sm text-on-surface-variant">volume_up</span>
+          <input id="speaker-volume-range" type="range" min="0" max="100" value="70" class="w-24 accent-yellow-400" />
+          <span id="speaker-volume-text" class="text-[11px] text-on-surface-variant w-10 text-right">70%</span>
+        </div>
         <button id="btn-mute" class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
           <span class="material-symbols-outlined text-sm">volume_off</span><span class="text-xs font-semibold">静音: OFF</span>
         </button>
@@ -140,11 +145,10 @@
       </div>
     </header>
 
-    <div class="flex-1 grid grid-cols-12 gap-5 min-h-0">
-      <section class="col-span-9 flex flex-col gap-5 min-h-0">
-        <div class="flex-1 glass-card rounded-xl overflow-hidden relative group">
+    <div class="flex-1 grid grid-cols-12 gap-4 min-h-0">
+      <section class="col-span-9 flex flex-col gap-4 min-h-0">
+        <div id="cam-card" class="flex-1 glass-card rounded-xl overflow-hidden relative group cursor-zoom-in">
           <img id="cam-feed" class="w-full h-full object-contain bg-black" alt="video" src="/api/v1/video/stream" />
-          <div class="absolute inset-0 bg-gradient-to-t from-surface/80 to-transparent pointer-events-none"></div>
           <div class="absolute top-6 left-6 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
             <div class="w-2 h-2 bg-red-500 rounded-full star-pulse"></div>
             <span id="cam-badge" class="text-xs font-bold tracking-widest">LIVE FEED • 1080P</span>
@@ -164,7 +168,7 @@
           </div>
         </div>
 
-        <div class="h-64 glass-card rounded-xl p-6 grid grid-cols-12 gap-5 items-center">
+        <div class="h-60 glass-card rounded-xl p-5 grid grid-cols-12 gap-4 items-center">
           <div class="col-span-7 flex flex-col gap-4">
             <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
             <div class="flex items-center gap-6">
@@ -261,6 +265,17 @@
     </div>
   </main>
 
+  <div id="cam-modal" class="fixed inset-0 z-[90] bg-black/90 backdrop-blur-sm hidden items-center justify-center p-2">
+    <div class="absolute top-4 right-4 flex items-center gap-2">
+      <button id="btn-cam-close" class="px-4 py-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors">
+        关闭预览
+      </button>
+    </div>
+    <div class="w-[98vmin] h-[98vmin] max-w-[98vw] max-h-[98vh] flex items-center justify-center bg-black rounded-2xl border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.55)] overflow-hidden">
+      <img id="cam-feed-modal" class="w-full h-full object-cover" alt="video enlarged" src="/api/v1/video/stream" />
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const logEl = $("event-log");
@@ -274,6 +289,16 @@
     let lastImuSeenAt = 0;
 
     function nowTime() { return new Date().toTimeString().slice(0, 8); }
+    function openCamModal() {
+      $("cam-modal").classList.remove("hidden");
+      $("cam-modal").classList.add("flex");
+      document.body.style.overflow = "hidden";
+    }
+    function closeCamModal() {
+      $("cam-modal").classList.add("hidden");
+      $("cam-modal").classList.remove("flex");
+      document.body.style.overflow = "hidden";
+    }
     function logRow(icon, text, time, colorCls) {
       const wrap = document.createElement("div");
       wrap.className = "flex gap-3";
@@ -328,6 +353,11 @@
       const icon = $("btn-mute").querySelector("span:first-child");
       label.textContent = "静音: " + (on ? "ON" : "OFF");
       icon.textContent = on ? "volume_up" : "volume_off";
+    }
+    function paintSpeakerVolume(v) {
+      const safe = Math.max(0, Math.min(100, Number(v || 0)));
+      $("speaker-volume-range").value = String(safe);
+      $("speaker-volume-text").textContent = safe + "%";
     }
     function paintFeatureButton(id, on) {
       const el = $(id);
@@ -411,6 +441,33 @@
       } catch (_) {}
     }
     async function toggleMute() { try { await fetch("/api/v1/mute?mode=toggle"); } catch (_) {} }
+    async function fetchSpeakerVolume() {
+      try {
+        const res = await fetch("/api/v1/audio/volume");
+        const j = await res.json();
+        if (j && j.volume != null) paintSpeakerVolume(j.volume);
+      } catch (_) {}
+    }
+    async function setSpeakerVolume(v) {
+      try {
+        const res = await fetch("/api/v1/audio/volume?value=" + encodeURIComponent(String(v)));
+        const j = await res.json();
+        if (j && j.volume != null) paintSpeakerVolume(j.volume);
+        if (!j || j.ok === false) {
+          logSystem("音量设置失败，正在拉取调试信息...");
+          try {
+            const dres = await fetch("/api/v1/audio/debug?value=" + encodeURIComponent(String(v)));
+            const dbg = await dres.json();
+            const sinkName = dbg && dbg.sink_detected ? dbg.sink_detected.name : "";
+            const after = dbg && dbg.after != null ? dbg.after : "--";
+            logSystem("调试结果: sink=" + (sinkName || "N/A") + ", after=" + after + "%");
+            console.log("[audio-debug]", dbg);
+          } catch (_) {
+            logSystem("调试信息拉取失败");
+          }
+        } else logSystem("音量设置: " + (j.volume ?? v) + "%");
+      } catch (_) {}
+    }
     function toggleObstacle() {
       fetch("/api/v1/control/mode?name=obstacle&value=toggle")
         .then((r) => r.json())
@@ -464,6 +521,7 @@
       const canvas = $("energy-canvas");
       const ctx = canvas.getContext("2d");
       const points = [];
+      let smoothLevel = 0;
       function resize() {
         const r = canvas.getBoundingClientRect();
         canvas.width = Math.max(50, Math.floor(r.width));
@@ -474,21 +532,30 @@
       window.addEventListener("resize", resize);
       function draw() {
         const w = canvas.width, h = canvas.height, mid = h * 0.5;
-        const level = Math.max(0, Math.min(300, energyLevel));
-        const amp = 5 + (level / 300) * 20;
-        energyPhase += 0.08 + (level / 300) * 0.08;
-        const y = mid - (Math.sin(energyPhase) * 0.75 + Math.sin(energyPhase * 1.7) * 0.25) * amp;
+        const level = Math.max(0, Math.min(300, Number(energyLevel || 0)));
+        smoothLevel += (level - smoothLevel) * 0.2;
+        const n = Math.max(0, Math.min(1, smoothLevel / 300));
+        // 非线性增益：高能量区放大更明显
+        const gain = Math.pow(n, 1.85);
+        const amp = 2 + gain * 34;
+        const freqBoost = 0.06 + gain * 0.2;
+        const spike = n > 0.7 ? Math.sin(energyPhase * 3.6) * (n - 0.7) * 10 : 0;
+        energyPhase += 0.06 + freqBoost;
+        const y = mid - (Math.sin(energyPhase) * 0.72 + Math.sin(energyPhase * 1.9) * 0.28) * amp - spike;
         points.push(y);
         while (points.length > w) points.shift();
 
         ctx.clearRect(0, 0, w, h);
-        ctx.strokeStyle = "rgba(239,177,249,0.26)";
+        ctx.strokeStyle = "rgba(239,177,249,0.18)";
         ctx.lineWidth = 1;
         for (let gy = 8; gy < h; gy += 14) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
-        ctx.strokeStyle = "#efb1f9";
-        ctx.lineWidth = 2.8;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = "rgba(239,177,249,0.65)";
+        const lineAlpha = 0.55 + n * 0.45;
+        const glow = 6 + n * 18;
+        const lineWidth = 1.8 + n * 2.6;
+        ctx.strokeStyle = "rgba(239,177,249," + lineAlpha.toFixed(3) + ")";
+        ctx.lineWidth = lineWidth;
+        ctx.shadowBlur = glow;
+        ctx.shadowColor = "rgba(239,177,249,0.85)";
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
           const x = w - points.length + i;
@@ -524,8 +591,15 @@
     $("btn-clear-memory").addEventListener("click", clearMemory);
     $("btn-obstacle").addEventListener("click", toggleObstacle);
     $("btn-follow").addEventListener("click", toggleFollow);
+    $("cam-card").addEventListener("click", openCamModal);
+    $("btn-cam-close").addEventListener("click", closeCamModal);
+    $("cam-modal").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "cam-modal") closeCamModal();
+    });
     paintFeatureButton("btn-obstacle", obstacleOn);
     paintFeatureButton("btn-follow", followOn);
+    $("speaker-volume-range").addEventListener("input", (e) => paintSpeakerVolume(e.target.value));
+    $("speaker-volume-range").addEventListener("change", (e) => setSpeakerVolume(e.target.value));
 
     $("speed-range").addEventListener("input", (e) => {
       const val = Math.max(0, Math.min(100, Number(e.target.value || 0)));
@@ -545,10 +619,15 @@
       if (e.key === " ") stopMove();
     });
     window.addEventListener("keyup", (e) => { if (["w","a","s","d"," "].includes(e.key)) stopMove(); });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeCamModal();
+    });
 
     connectSSE();
     pollState();
+    fetchSpeakerVolume();
     setInterval(pollState, 1400);
+    setInterval(fetchSpeakerVolume, 5000);
     setInterval(updateGyroStatus, 600);
     startWave();
     logSystem("控制台已加载");
