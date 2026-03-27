@@ -28,6 +28,7 @@ class WebServer {
     std::function<void(const std::string&)> mute_cmd_;
     std::function<std::string()> diag_baidu_deepseek_;
     std::function<std::string()> clear_memory_;
+    std::function<std::string(const std::string&, const std::string&)> motion_mode_http_;
 
     std::mutex eye_mtx_;
     std::condition_variable eye_cv_;
@@ -89,6 +90,7 @@ public:
     void SetMuteCommandHandler(std::function<void(const std::string&)> cb) { mute_cmd_ = std::move(cb); }
     void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
     void SetClearMemoryHandler(std::function<std::string()> cb) { clear_memory_ = std::move(cb); }
+    void SetMotionModeHandler(std::function<std::string(const std::string&, const std::string&)> cb) { motion_mode_http_ = std::move(cb); }
     void PushEyeData(float nx, float ny, const std::string& emotion) {
         { std::lock_guard<std::mutex> lk(eye_mtx_);
           eye_emotion_ = emotion;
@@ -322,6 +324,30 @@ public:
             handle_cmd(act, res);
         });
 
+        // App 运动模式接口：自动避障 / 跟随模式
+        // GET  : /api/v1/control/mode?name=obstacle&value=on
+        // POST : {"name":"follow","value":"toggle"}
+        auto mode_control = [this](const std::string& name, const std::string& value, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!motion_mode_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_mode_handler\"}", "application/json");
+                return;
+            }
+            res.set_content(motion_mode_http_(name, value), "application/json");
+        };
+        svr.Get("/api/v1/control/mode", [mode_control](const httplib::Request& req, httplib::Response& res) {
+            std::string name = req.has_param("name") ? req.get_param_value("name") : "";
+            std::string value = req.has_param("value") ? req.get_param_value("value") : "get";
+            mode_control(name, value, res);
+        });
+        svr.Post("/api/v1/control/mode", [mode_control](const httplib::Request& req, httplib::Response& res) {
+            std::string name = ExtractJsonStringField(req.body, "name");
+            std::string value = ExtractJsonStringField(req.body, "value");
+            if (value.empty()) value = "get";
+            mode_control(name, value, res);
+        });
+
         // App 全量状态接口：一次返回状态 + 情绪/识别 + ESP32 + 眼睛 + 视频元信息
         svr.Get("/api/v1/app/state", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
@@ -483,10 +509,11 @@ public:
         });
 
         // ── 超级控制台 /dashboard ─────────────────────────────────
-        // 从 src/dashboard_v2.html 读取（运行时路径为 ./src/dashboard_v2.html）
+        // 优先加载 v3 设计稿，其次回退到 v2/旧版
         svr.Get("/dashboard", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
-            std::string html = ReadFile("./src/dashboard_v2.html");
+            std::string html = ReadFile("./src/dashboard_v3.html");
+            if (html.empty()) html = ReadFile("./src/dashboard_v2.html");
             if (html.empty()) html = ReadFile("./src/dashboard.html"); // 兼容旧文件
             if (html.empty()) {
                 res.status = 503;

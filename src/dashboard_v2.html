@@ -2,243 +2,418 @@
 <html class="dark" lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>STAR GEM | 机器人控制后台</title>
-  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>星宝 Star Gem - 控制中心</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: { extend: { colors: {
+        primary:"#fdd835",secondary:"#efb1f9",tertiary:"#a0e0ff",
+        surface:"#0b0c1f","surface-container":"#16172e","surface-container-low":"#101126","surface-container-high":"#1c1d36",
+        "on-surface":"#e4e3fe","on-surface-variant":"#a9a9c2",error:"#ff7351"
+      }, fontFamily:{ body:["Plus Jakarta Sans","sans-serif"] } } }
+    };
+  </script>
   <style>
-    :root {
-      --bg: #0b1118;
-      --panel: #121a24cc;
-      --border: #223042;
-      --text: #dbe7f5;
-      --muted: #87a0b8;
-      --cyan: #00daf3;
-      --cyan2: #4be8ff;
-      --red: #ff9a9a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: radial-gradient(1200px 700px at 20% -10%, #12263d 0%, #0b1118 45%, #090f16 100%);
-      color: var(--text);
-      font-family: "Space Grotesk", sans-serif;
-      overflow: hidden;
-    }
-    .glass {
-      background: linear-gradient(180deg, rgba(17, 25, 35, 0.9), rgba(11, 17, 24, 0.9));
-      border: 1px solid var(--border);
-      backdrop-filter: blur(10px);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-    .neon-edge {
-      border-color: #1dd8ff;
-      box-shadow: 0 0 0 1px rgba(29, 216, 255, 0.45), 0 0 30px rgba(29, 216, 255, 0.2);
-    }
-    .small-label { color: var(--muted); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
-    .signal-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--red); box-shadow: 0 0 8px var(--red); }
-    .metric-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
-    .metric-bar { height: 8px; border-radius: 999px; background: #152435; border: 1px solid #24384f; overflow: hidden; }
-    .metric-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #20d7ff, #78ebff); transition: width .25s ease; }
-    .flash-change { animation: flash .35s ease; }
-    .radar {
-      width: 116px; height: 116px; border-radius: 999px; position: relative; overflow: hidden;
-      border: 1px solid #24435b; background: radial-gradient(circle at center, #102236 0%, #0a1624 60%, #08121d 100%);
-    }
-    .radar::before, .radar::after {
-      content: ""; position: absolute; inset: 12%; border: 1px solid #1d3d55; border-radius: 999px;
-    }
-    .radar::after { inset: 30%; }
-    .sweep {
-      position: absolute; inset: 0;
-      background: conic-gradient(from 0deg, rgba(0, 218, 243, 0.42) 0deg, rgba(0, 218, 243, 0.0) 70deg, transparent 360deg);
-      animation: spin 2.5s linear infinite;
-    }
-    .radar-dot {
-      position: absolute; width: 8px; height: 8px; border-radius: 999px; background: #6df3ff;
-      box-shadow: 0 0 12px #3eefff;
-      left: 54px; top: 54px;
-      transform: translate(-50%, -50%);
-    }
-    .attitude {
-      width: 116px; height: 116px; border-radius: 999px; position: relative; margin: 0 auto;
-      border: 1px solid #2a4160; background: radial-gradient(circle at center, #101f33 0%, #0b1625 72%);
-      overflow: hidden;
-    }
-    .att-ring {
-      position: absolute; inset: 14px; border-radius: 999px; border: 1px dashed #436c97;
-      animation: spin 7s linear infinite;
-    }
-    .att-cross-h, .att-cross-v {
-      position: absolute; background: #4d6f8f;
-    }
-    .att-cross-h { left: 16px; right: 16px; top: 57px; height: 1px; }
-    .att-cross-v { top: 16px; bottom: 16px; left: 57px; width: 1px; }
-    .att-needle {
-      position: absolute; left: 50%; top: 50%; width: 2px; height: 44px; background: #62d7ff;
-      transform-origin: center 36px;
-      box-shadow: 0 0 8px #62d7ff;
-      border-radius: 2px;
-    }
-    .ecg-wrap {
-      height: 84px; border: 1px solid #1d2f42; border-radius: 10px; background: #0c1622; overflow: hidden; position: relative;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes flash { 0% { color: #fff; text-shadow: 0 0 12px #7fefff; } 100% { color: inherit; text-shadow: none; } }
+    body{background-color:#0b0c1f;background-image:radial-gradient(circle at 20% 30%,rgba(253,216,53,.05) 0%,transparent 40%),radial-gradient(circle at 80% 70%,rgba(239,177,249,.08) 0%,transparent 40%);font-family:'Plus Jakarta Sans',sans-serif;color:#e4e3fe;overflow:hidden}
+    .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24}
+    .glass-card{background:rgba(34,35,62,.4);backdrop-filter:blur(20px);border:1px solid rgba(228,227,254,.05)}
+    .clay-btn{box-shadow:inset 0 2px 4px rgba(255,255,255,.3),inset 0 -2px 4px rgba(0,0,0,.2)}
+    .star-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(.95)}}
+    .custom-scrollbar::-webkit-scrollbar{width:4px}
+    .custom-scrollbar::-webkit-scrollbar-track{background:rgba(255,255,255,.05);border-radius:10px}
+    .custom-scrollbar::-webkit-scrollbar-thumb{background:rgba(253,216,53,.2);border-radius:10px}
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover{background:rgba(253,216,53,.4)}
   </style>
 </head>
-<body class="h-screen w-screen">
-  <header class="fixed top-0 left-0 right-0 h-14 px-4 z-30 glass border-x-0 border-t-0 flex items-center justify-between">
-    <div class="flex items-center gap-6">
-      <div class="text-xl font-bold tracking-tight text-[var(--cyan)]">STAR GEM</div>
-      <div class="hidden md:flex gap-5 text-[11px]">
-        <span class="text-[var(--cyan)] border-b border-[var(--cyan)] pb-[2px]">云端同步</span>
-        <span class="text-[var(--muted)]">本地模式</span>
-        <span class="text-[var(--muted)]">音频设置</span>
+<body class="h-screen flex">
+  <aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#0b0c1f]/80 backdrop-blur-2xl w-72 rounded-r-[3rem] shadow-[20px_0_40px_rgba(14,12,31,0.6)]">
+    <div class="px-8 mb-10 flex flex-col items-center">
+      <div class="relative mb-4">
+        <div class="w-20 h-20 rounded-full bg-primary/20 p-1 ring-2 ring-primary/30">
+          <img class="w-full h-full object-cover rounded-full" alt="star gem" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkBfR0cIxz8Wyfs_c8gYOpjTAKck9djuVr-ht0qTYLlO4QvMN3BMuFhIgJeLz4-vhto1ODbTufSCxwwKYM8KIdA0xJLV4AKapr3oqMlKkBHoV4axs__NXQPosD0ruTMo4rYPzWA971_rQvfJJQrrTgklZIISVAyi84e7b8cM2MfuApIbCpiUbM_dM4xskjPreCICLbIhp6bg_SGmOFC3zPpOSAJ2CyAVWnbLlhjV88OznVKUvNmkUhnOkJyYoy-TycNoWU9qQ9eg" />
+        </div>
+        <div class="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-4 border-[#0b0c1f] rounded-full"></div>
       </div>
-      <div class="hidden md:flex items-center gap-2 ml-2">
-        <button id="btn-backend-local" class="glass rounded-md px-2 py-1 text-[10px] text-[#7fd8ff]">local</button>
-        <button id="btn-backend-baidu" class="glass rounded-md px-2 py-1 text-[10px] text-[#9eb2c8]">baidu</button>
-        <button id="btn-backend-toggle" class="glass rounded-md px-2 py-1 text-[10px] text-[#9eb2c8]">切换</button>
-        <button id="btn-mute" class="glass rounded-md px-2 py-1 text-[10px] text-[#ffca8e]">静音:OFF</button>
-        <button id="btn-clear-memory" class="glass rounded-md px-2 py-1 text-[10px] text-[#ffb2a8]">清除记忆</button>
-      </div>
+      <h1 class="text-lg font-black text-yellow-400">星宝 Star Gem</h1>
+      <p class="text-slate-400 text-xs mt-1">你的星空伙伴</p>
     </div>
-    <div class="flex items-center gap-4 text-[11px]">
-      <div class="glass rounded-md px-2 py-1 text-[var(--cyan)] font-semibold" id="top-fps">-- 帧率</div>
-      <div class="text-[var(--muted)] font-mono" id="clock">--:--:--</div>
-      <div class="w-7 h-7 rounded-full border border-[#2d465d] bg-[#101b28]"></div>
+    <nav class="flex-1 px-4 space-y-2">
+      <a class="flex items-center gap-4 bg-yellow-400/10 text-yellow-400 rounded-full px-6 py-4 transition-all" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
+    </nav>
+    <div class="px-6 mt-auto">
+      <button id="btn-stop-all" class="w-full bg-error text-[#450900] py-4 rounded-full font-bold flex items-center justify-center gap-2">
+        <span class="material-symbols-outlined">emergency</span>Emergency Stop
+      </button>
     </div>
-  </header>
+  </aside>
 
-  <main class="pt-16 pb-8 px-3 h-full flex gap-3">
-    <aside class="w-14 glass rounded-xl p-2 flex flex-col items-center gap-3">
-      <div class="w-full h-10 rounded-lg bg-[#0f1d2b] border border-[#234258] flex items-center justify-center text-[var(--cyan)] text-[10px]">单位-01</div>
-      <button class="w-9 h-9 rounded-lg bg-[#103149] border border-[#1f5b7e] text-[var(--cyan)]">▣</button>
-      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">▤</button>
-      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">◎</button>
-      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">⌁</button>
-      <div class="flex-1"></div>
-      <button class="w-9 h-9 rounded-lg bg-[#34161c] border border-[#8a3a46] text-[#ff9fa8]">◆</button>
-    </aside>
+  <main class="flex-1 ml-72 p-6 flex flex-col gap-6 overflow-hidden">
+    <header class="flex justify-between items-center w-full px-4 py-2 bg-slate-800/20 rounded-full backdrop-blur-xl">
+      <div class="flex p-1 bg-surface-container rounded-full">
+        <button id="btn-backend-local" class="px-6 py-2 rounded-full bg-primary text-[#5b4b00] text-sm font-bold clay-btn">本地模式</button>
+        <button id="btn-backend-baidu" class="px-6 py-2 rounded-full text-on-surface-variant text-sm font-medium">云端同步</button>
+      </div>
+      <div class="flex items-center gap-4">
+        <button id="btn-mute" class="flex items-center gap-2 text-slate-300 bg-surface-container px-4 py-2 rounded-full"><span class="material-symbols-outlined text-sm">volume_off</span><span class="text-xs">静音: OFF</span></button>
+        <div class="flex items-center gap-2 text-secondary px-4 py-2 bg-secondary/10 rounded-full"><span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1;">face</span><span id="face-status" class="text-xs font-semibold">人脸识别: 已激活</span></div>
+      </div>
+    </header>
 
-    <section class="flex-1 min-w-0 flex flex-col gap-3">
-      <div class="flex-1 min-h-0 glass rounded-xl p-2">
-        <div class="w-full h-full rounded-lg overflow-hidden relative border border-[#1f536d] neon-edge">
-          <img src="/api/v1/video/stream" alt="video stream" class="w-full h-full object-contain bg-black" />
-          <div class="absolute inset-0 p-3 pointer-events-none flex flex-col justify-between">
-            <div class="flex justify-between">
-              <div class="glass rounded-md px-3 py-2 border-l-2 border-[var(--cyan)]">
-                <div class="small-label text-[var(--cyan)]">摄像头馈送</div>
-                <div class="font-mono text-sm">摄像头_01_大厅</div>
+    <div class="flex-1 grid grid-cols-12 gap-6 min-h-0">
+      <section class="col-span-8 flex flex-col gap-6 min-h-0">
+        <div class="flex-1 glass-card rounded-xl overflow-hidden relative">
+          <img id="cam-feed" class="w-full h-full object-cover" alt="video" src="/api/v1/video/stream" />
+          <div class="absolute inset-0 bg-gradient-to-t from-surface/80 to-transparent pointer-events-none"></div>
+          <div class="absolute top-6 left-6 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10"><div class="w-2 h-2 bg-red-500 rounded-full star-pulse"></div><span id="cam-badge" class="text-xs font-bold tracking-widest">LIVE FEED • 1080P</span></div>
+          <div class="absolute bottom-6 left-6 text-white/80"><h3 class="text-lg font-bold">视角: 广角巡航</h3><p class="text-xs opacity-60">坐标: X:<span id="ax-mini">0.0</span>, Y:<span id="ay-mini">0.0</span></p></div>
+        </div>
+        <div class="h-64 glass-card rounded-xl p-8 flex items-center justify-between">
+          <div class="flex flex-col gap-4">
+            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
+            <div class="flex items-center gap-6">
+              <div class="relative w-40 h-40 rounded-full bg-surface-container-high flex items-center justify-center border border-white/5">
+                <div class="grid grid-cols-3 grid-rows-3 gap-2">
+                  <div class="col-start-2 flex justify-center"><button id="btn-forward" class="w-10 h-10 bg-slate-700/50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined">keyboard_arrow_up</span></button></div>
+                  <div class="row-start-2 flex justify-center"><button id="btn-left" class="w-10 h-10 bg-slate-700/50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined">keyboard_arrow_left</span></button></div>
+                  <div class="row-start-2 col-start-2 flex justify-center items-center"><button id="btn-stop" class="w-8 h-8 bg-primary rounded-full"></button></div>
+                  <div class="row-start-2 col-start-3 flex justify-center"><button id="btn-right" class="w-10 h-10 bg-slate-700/50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined">keyboard_arrow_right</span></button></div>
+                  <div class="row-start-3 col-start-2 flex justify-center"><button id="btn-backward" class="w-10 h-10 bg-slate-700/50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined">keyboard_arrow_down</span></button></div>
+                </div>
               </div>
-              <div class="flex flex-col items-end gap-2 text-[11px]">
-                <div id="state-pill" class="glass rounded-md px-2 py-1 text-[var(--cyan)]">状态: waiting</div>
-                <div id="backend-pill" class="glass rounded-md px-2 py-1 font-mono">后端: -</div>
+              <div class="space-y-4">
+                <div class="p-4 bg-surface-container-low rounded-lg border border-white/5 w-48">
+                  <div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>SPEED</span><span id="speed-pct">75%</span></div>
+                  <div class="h-1.5 w-full bg-surface rounded-full overflow-hidden"><div id="speed-fill" class="h-full bg-primary w-[75%] rounded-full"></div></div>
+                  <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full mt-2" />
+                </div>
+                <div class="bg-secondary/10 p-4 rounded-xl border border-secondary/20">
+                  <p class="text-xs font-bold text-secondary">星宝情绪</p>
+                  <p id="emotion-txt" class="text-[10px] text-secondary/70">状态: 开心且好奇</p>
+                  <p class="text-[10px] text-secondary/70">对话次数: <span id="dialog-turn-count">0</span></p>
+                </div>
               </div>
             </div>
-            <div class="flex justify-between text-[11px] font-mono">
-              <div class="glass rounded-md px-2 py-1">人脸: <span id="face-name">-</span> | 分数: <span id="face-score">-</span></div>
-              <div class="glass rounded-md px-2 py-1">情绪: <span id="face-emotion">-</span></div>
-            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="h-36 grid grid-cols-3 gap-3">
-        <div class="glass rounded-xl p-3">
-          <div class="small-label text-[var(--cyan)] mb-2">LD2402 雷达</div>
-          <div class="flex justify-center py-1">
-            <div class="radar">
-              <div class="sweep"></div>
-              <div id="radar-dot" class="radar-dot"></div>
-            </div>
-          </div>
-          <div class="text-xs mt-1">距离: <span id="radar-dist">-</span> cm</div>
-          <div class="text-xs">能量: <span id="radar-energy">-</span></div>
+      <section class="col-span-4 flex flex-col gap-6 min-h-0">
+        <div class="flex-1 glass-card rounded-xl p-6 flex flex-col min-h-0">
+          <div class="flex justify-between items-center mb-4"><h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">星宝日志</h4><button id="btn-clear-memory" class="text-[10px] text-primary bg-primary/10 px-2 py-1 rounded">清空日志</button></div>
+          <div id="event-log" class="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar"></div>
         </div>
-        <div class="glass rounded-xl p-3">
-          <div class="small-label text-[#8ab6ff] mb-2">IMU 姿态</div>
-          <div class="attitude mb-2">
-            <div class="att-ring"></div>
-            <div class="att-cross-h"></div>
-            <div class="att-cross-v"></div>
-            <div id="att-needle" class="att-needle"></div>
-          </div>
-          <div class="text-xs font-mono">AX: <span id="ax">-</span></div>
-          <div class="text-xs font-mono">AY: <span id="ay">-</span></div>
-          <div class="text-xs font-mono">AZ: <span id="az">-</span></div>
-          <div class="text-xs font-mono">GY: <span id="gy">-</span></div>
+        <div class="h-72 glass-card rounded-xl p-6 flex flex-col gap-6">
+          <div><div class="flex justify-between items-center mb-3"><h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">运动能量</h4><span id="energy-bpm" class="text-[10px] text-secondary">-- BPM</span></div><div class="h-16 relative overflow-hidden"><canvas id="energy-canvas" class="w-full h-full"></canvas></div></div>
+          <div class="flex-1 flex flex-col"><h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">3D 姿态感应</h4><div class="space-y-2 text-[10px]"><div>PITCH <span id="pitch" class="text-primary">0.0°</span></div><div>ROLL <span id="roll" class="text-primary">0.0°</span></div><div>YAW <span id="yaw" class="text-primary">0.0°</span></div></div></div>
         </div>
-        <div class="glass rounded-xl p-3">
-          <div class="small-label mb-2">事件日志</div>
-          <div id="event-log" class="h-[90px] overflow-auto text-[11px] font-mono space-y-1"></div>
-        </div>
-      </div>
-    </section>
-
-    <aside class="w-72 shrink-0 flex flex-col gap-3">
-      <div class="glass rounded-xl p-3">
-        <div class="small-label text-[var(--cyan)] mb-3">传感器遥测</div>
-        <div class="space-y-2 text-sm mb-3">
-          <div>状态: <span id="robot-state" class="font-mono">waiting</span></div>
-          <div>检测FPS: <span id="det-fps" class="metric-value">0</span></div>
-          <div>静音: <span id="mute-state" class="font-mono">OFF</span></div>
-        </div>
-        <div class="text-[11px] mb-1">运动能量 <span id="energy-mini" class="metric-value text-[#7fe8ff]">0</span></div>
-        <div class="metric-bar mb-2"><div id="energy-bar-fill" class="metric-fill"></div></div>
-        <div class="text-[11px] mb-1">陀螺Y <span id="gyro-mini" class="metric-value text-[#a3c8ff]">0.0</span></div>
-        <div class="metric-bar"><div id="gyro-bar-fill" class="metric-fill" style="background:linear-gradient(90deg,#7aa7ff,#bde2ff)"></div></div>
-      </div>
-
-      <div class="glass rounded-xl p-3">
-        <div class="small-label text-[var(--cyan)] mb-3">电机控制</div>
-        <div class="text-xs mb-1">速度: <span id="speed-value">75</span>%</div>
-        <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full accent-cyan-400 mb-4" />
-        <div class="grid grid-cols-3 gap-2 max-w-[180px] mx-auto text-sm">
-          <div></div><button id="btn-forward" class="glass rounded-lg h-10">↑</button><div></div>
-          <button id="btn-left" class="glass rounded-lg h-10">←</button>
-          <button id="btn-stop" class="rounded-lg h-10 bg-[#361b20] border border-[#96515c] text-[#ffadb4]">■</button>
-          <button id="btn-right" class="glass rounded-lg h-10">→</button>
-          <div></div><button id="btn-backward" class="glass rounded-lg h-10">↓</button><div></div>
-        </div>
-      </div>
-
-      <div class="glass rounded-xl p-3 flex-1">
-        <div class="small-label text-[var(--cyan)] mb-2">运动能量波形</div>
-        <div class="text-sm mb-2">当前值: <span id="energy-value" class="font-mono text-[#5fe7ff]">0</span></div>
-        <div class="ecg-wrap">
-          <canvas id="energy-canvas" class="w-full h-full"></canvas>
-        </div>
-      </div>
-    </aside>
+      </section>
+    </div>
   </main>
-
-  <footer class="fixed bottom-0 left-0 right-0 h-7 px-4 glass border-x-0 border-b-0 flex items-center justify-between text-[10px] uppercase tracking-wider">
-    <div class="text-[var(--cyan)]">v2.4.0-稳定版</div>
-    <div class="flex items-center gap-4 text-[var(--muted)]">
-      <div class="flex items-center gap-1"><span class="signal-dot" id="uplink-dot"></span><span id="uplink-text">链路初始化</span></div>
-      <span id="latency">延迟: --ms</span>
-    </div>
-  </footer>
 
   <script>
     const $ = (id) => document.getElementById(id);
     const logEl = $("event-log");
+    const seenDialogSigs = new Set();
     let currentAct = "stop";
     let heartbeat = null;
-    const lastValues = {};
-    const seenDialogSigs = new Set();
     let energyLevel = 0;
-    let energyWavePhase = 0;
+    let energyPhase = 0;
 
-    function addLog(msg, color = "#dfe2eb") {
-      const t = new Date().toTimeString().slice(0, 8);
-      const row = document.createElement("div");
-      row.innerHTML = '<span style="color:#87a0b8">[' + t + ']</span> <span style="color:' + color + '">' + msg + "</span>";
-      logEl.prepend(row);
-      while (logEl.children.length > 70) logEl.removeChild(logEl.lastChild);
+    function nowTime(){ return new Date().toTimeString().slice(0,8); }
+    function addLog(icon,text,color){ const row=document.createElement("div"); row.className="flex gap-3"; row.innerHTML='<div class="w-8 h-8 rounded-full bg-slate-700/40 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-sm '+color+'">'+icon+'</span></div><div class="text-xs"><p class="text-slate-300">'+text+'</p><p class="text-slate-500 mt-1">'+nowTime()+'</p></div>'; logEl.prepend(row); while(logEl.children.length>120) logEl.removeChild(logEl.lastChild); }
+    function logSystem(x){ addLog("info",x,"text-tertiary"); }
+    function logUser(x){ addLog("face","你: "+x,"text-secondary"); }
+    function logAi(x){ addLog("smart_toy","星宝: "+x,"text-primary"); }
+    function sendMotor(action,durationMs=0){ const q=new URLSearchParams({action}); if(durationMs>0) q.set("duration_ms",String(durationMs)); fetch("/api/v1/control/motor?"+q.toString()).catch(()=>{}); }
+    function startMove(action){ currentAct=action; sendMotor(action); clearInterval(heartbeat); heartbeat=setInterval(()=>{ if(currentAct!=="stop") sendMotor(currentAct); },150); }
+    function stopMove(){ currentAct="stop"; clearInterval(heartbeat); heartbeat=null; sendMotor("stop"); }
+    function bindHold(id,action){ const el=$(id); el.addEventListener("mousedown",()=>startMove(action)); el.addEventListener("mouseup",stopMove); el.addEventListener("mouseleave",stopMove); el.addEventListener("touchstart",(e)=>{e.preventDefault();startMove(action);},{passive:false}); el.addEventListener("touchend",stopMove); el.addEventListener("touchcancel",stopMove); }
+    function paintBackend(selected){ const local=String(selected||"").toLowerCase().includes("local"); $("btn-backend-local").classList.toggle("bg-primary",local); $("btn-backend-local").classList.toggle("text-[#5b4b00]",local); $("btn-backend-local").classList.toggle("clay-btn",local); $("btn-backend-baidu").classList.toggle("bg-primary",!local); $("btn-backend-baidu").classList.toggle("text-[#5b4b00]",!local); $("btn-backend-baidu").classList.toggle("clay-btn",!local); }
+    function paintMute(on){ const icon=$("btn-mute").querySelector("span:first-child"); const text=$("btn-mute").querySelector("span:last-child"); icon.textContent=on?"volume_up":"volume_off"; text.textContent="静音: "+(on?"ON":"OFF"); }
+    function renderDialogEvents(items){ const start=Math.max(0,items.length-6); for(let i=start;i<items.length;i++){ const it=items[i]||{}; const u=String(it.user||""); const a=String(it.assistant||""); const sig=u+"||"+a; if(!sig||seenDialogSigs.has(sig)) continue; seenDialogSigs.add(sig); if(u) logUser(u); if(a) logAi(a);} if(seenDialogSigs.size>1500) seenDialogSigs.clear(); }
+    function applyStatus(d){ $("face-status").textContent="人脸识别: "+(d.face?"已激活":"无目标"); paintBackend(d.backend_selected||"local"); paintMute(!!d.muted); $("dialog-turn-count").textContent=String(d.dialog_turn_count??0); if(d.face&&d.face.emotion) $("emotion-txt").textContent="状态: "+d.face.emotion; if(d.esp32){ $("ax-mini").textContent=d.esp32.ax!=null?Number(d.esp32.ax).toFixed(1):"0.0"; $("ay-mini").textContent=d.esp32.ay!=null?Number(d.esp32.ay).toFixed(1):"0.0"; $("pitch").textContent=d.esp32.gx!=null?Number(d.esp32.gx).toFixed(1)+"°":"0.0°"; $("roll").textContent=d.esp32.gy!=null?Number(d.esp32.gy).toFixed(1)+"°":"0.0°"; $("yaw").textContent=d.esp32.gz!=null?Number(d.esp32.gz).toFixed(1)+"°":"0.0°"; energyLevel=Number(d.esp32.radar_energy||0); $("energy-bpm").textContent=Math.max(40,Math.min(120,50+energyLevel))+" BPM"; } if(Array.isArray(d.dialog_events)) renderDialogEvents(d.dialog_events); if(d.fps!=null) $("cam-badge").textContent="LIVE FEED • "+d.fps+" FPS"; }
+    async function setBackend(mode){ try{ const res=await fetch("/api/v1/backend?mode="+encodeURIComponent(mode)); const j=await res.json(); if(j.backend_selected) paintBackend(j.backend_selected); logSystem("后端切换: "+mode);}catch(_){} }
+    async function toggleMute(){ try{ await fetch("/api/v1/mute?mode=toggle"); }catch(_){} }
+    async function clearMemory(){ try{ const res=await fetch("/api/v1/memory/clear",{method:"POST"}); const j=await res.json(); if(j&&j.ok){ seenDialogSigs.clear(); logEl.innerHTML=""; logSystem("日志与记忆已清空"); $("dialog-turn-count").textContent="0"; } else { logSystem("清空失败"); } }catch(_){ logSystem("清空失败"); } }
+    function connectSSE(){ const es=new EventSource("/api/v1/status/stream"); es.onopen=()=>logSystem("状态流已连接"); es.onmessage=(e)=>{ try{ applyStatus(JSON.parse(e.data)); }catch(_){} }; }
+    async function pollState(){ try{ const res=await fetch("/api/v1/app/state"); const j=await res.json(); if(j&&j.status) applyStatus(j.status); }catch(_){} }
+    function startWave(){ const canvas=$("energy-canvas"); const ctx=canvas.getContext("2d"); const points=[]; const resize=()=>{ const r=canvas.getBoundingClientRect(); canvas.width=Math.max(50,Math.floor(r.width)); canvas.height=Math.max(50,Math.floor(r.height)); points.length=0; }; resize(); window.addEventListener("resize",resize); const draw=()=>{ const w=canvas.width,h=canvas.height,mid=h*0.5,level=Math.max(0,Math.min(300,energyLevel)),amp=5+(level/300)*20; energyPhase+=0.08+(level/300)*0.08; const y=mid-(Math.sin(energyPhase)*0.75+Math.sin(energyPhase*1.7)*0.25)*amp; points.push(y); while(points.length>w) points.shift(); ctx.clearRect(0,0,w,h); ctx.strokeStyle="rgba(239,177,249,0.26)"; ctx.lineWidth=1; for(let gy=8; gy<h; gy+=14){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke(); } ctx.strokeStyle="#efb1f9"; ctx.lineWidth=2.8; ctx.shadowBlur=10; ctx.shadowColor="rgba(239,177,249,0.65)"; ctx.beginPath(); for(let i=0;i<points.length;i++){ const x=w-points.length+i; if(i===0) ctx.moveTo(x,points[i]); else ctx.lineTo(x,points[i]); } ctx.stroke(); ctx.shadowBlur=0; requestAnimationFrame(draw); }; draw(); }
+    bindHold("btn-forward","forward"); bindHold("btn-backward","backward"); bindHold("btn-left","left"); bindHold("btn-right","right");
+    $("btn-stop").addEventListener("click",stopMove); $("btn-stop-all").addEventListener("click",stopMove);
+    $("btn-backend-local").addEventListener("click",()=>setBackend("local")); $("btn-backend-baidu").addEventListener("click",()=>setBackend("baidu"));
+    $("btn-mute").addEventListener("click",toggleMute); $("btn-clear-memory").addEventListener("click",clearMemory);
+    $("speed-range").addEventListener("input",(e)=>{ const val=Math.max(0,Math.min(100,Number(e.target.value||0))); $("speed-fill").style.width=val+"%"; $("speed-pct").textContent=val+"%"; });
+    $("speed-range").addEventListener("change",(e)=>{ const v=Math.max(0,Math.min(255,Math.round(Number(e.target.value||0)*2.55))); sendMotor("speed:"+v); logSystem("速度调整: "+v); });
+    window.addEventListener("keydown",(e)=>{ if(e.repeat) return; if(e.key==="w") startMove("forward"); if(e.key==="s") startMove("backward"); if(e.key==="a") startMove("left"); if(e.key==="d") startMove("right"); if(e.key===" ") stopMove(); });
+    window.addEventListener("keyup",(e)=>{ if(["w","a","s","d"," "].includes(e.key)) stopMove(); });
+    connectSSE(); pollState(); setInterval(pollState,1400); startWave(); logSystem("控制台已加载");
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>星宝 Star Gem - 控制中心</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            secondary: "#efb1f9",
+            tertiary: "#a0e0ff",
+            surface: "#0b0c1f",
+            "surface-container": "#16172e",
+            "surface-container-low": "#101126",
+            "surface-container-high": "#1c1d36",
+            "surface-container-highest": "#22233e",
+            "surface-variant": "#22233e",
+            "on-surface": "#e4e3fe",
+            "on-surface-variant": "#a9a9c2",
+            primary: "#fdd835",
+            error: "#ff7351",
+            outline: "#73738b",
+            "outline-variant": "#46465b"
+          },
+          fontFamily: {
+            headline: ["Plus Jakarta Sans", "sans-serif"],
+            body: ["Plus Jakarta Sans", "sans-serif"],
+            label: ["Plus Jakarta Sans", "sans-serif"]
+          },
+          borderRadius: { DEFAULT: "1rem", lg: "2rem", xl: "3rem", full: "9999px" }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #0b0c1f;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(253, 216, 53, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(239, 177, 249, 0.08) 0%, transparent 40%);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: #e4e3fe;
+      overflow: hidden;
     }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-card {
+      background: rgba(34, 35, 62, 0.4);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(228, 227, 254, 0.05);
+    }
+    .clay-btn {
+      box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(0, 0, 0, 0.2);
+    }
+    .star-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: .7; transform: scale(0.95); }
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(253,216,53,0.2); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(253,216,53,0.4); }
+  </style>
+</head>
+<body class="h-screen flex">
+  <aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#0b0c1f]/80 backdrop-blur-2xl w-72 rounded-r-[3rem] shadow-[20px_0_40px_rgba(14,12,31,0.6)]">
+    <div class="px-8 mb-10 flex flex-col items-center">
+      <div class="relative mb-4">
+        <div class="w-20 h-20 rounded-full bg-primary/20 p-1 ring-2 ring-primary/30">
+          <img class="w-full h-full object-cover rounded-full" alt="star gem" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkBfR0cIxz8Wyfs_c8gYOpjTAKck9djuVr-ht0qTYLlO4QvMN3BMuFhIgJeLz4-vhto1ODbTufSCxwwKYM8KIdA0xJLV4AKapr3oqMlKkBHoV4axs__NXQPosD0ruTMo4rYPzWA971_rQvfJJQrrTgklZIISVAyi84e7b8cM2MfuApIbCpiUbM_dM4xskjPreCICLbIhp6bg_SGmOFC3zPpOSAJ2CyAVWnbLlhjV88OznVKUvNmkUhnOkJyYoy-TycNoWU9qQ9eg" />
+        </div>
+        <div class="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-4 border-[#0b0c1f] rounded-full"></div>
+      </div>
+      <h1 class="text-lg font-black text-yellow-400">星宝 Star Gem</h1>
+      <p class="text-slate-400 text-xs mt-1">你的星空伙伴</p>
+    </div>
+    <nav class="flex-1 px-4 space-y-2">
+      <a class="flex items-center gap-4 bg-yellow-400/10 text-yellow-400 rounded-full px-6 py-4 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
+    </nav>
+    <div class="px-6 mt-auto">
+      <button id="btn-stop-all" class="w-full bg-error text-[#450900] py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all">
+        <span class="material-symbols-outlined">emergency</span>Emergency Stop
+      </button>
+    </div>
+  </aside>
+
+  <main class="flex-1 ml-72 p-6 flex flex-col gap-6 overflow-hidden">
+    <header class="flex justify-between items-center w-full px-4 py-2 bg-slate-800/20 rounded-full backdrop-blur-xl">
+      <div class="flex items-center gap-3">
+        <div class="flex p-1 bg-surface-container rounded-full">
+          <button id="btn-backend-local" class="px-6 py-2 rounded-full bg-primary text-[#5b4b00] text-sm font-bold clay-btn">本地模式</button>
+          <button id="btn-backend-baidu" class="px-6 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">云端同步</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button id="btn-mute" class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
+          <span class="material-symbols-outlined text-sm">volume_off</span><span class="text-xs font-semibold">静音: OFF</span>
+        </button>
+        <div class="flex items-center gap-2 text-secondary px-4 py-2 bg-secondary/10 rounded-full">
+          <span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">face</span>
+          <span id="face-status" class="text-xs font-semibold">人脸识别: 已激活</span>
+        </div>
+        <div class="flex gap-2">
+          <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">settings</span>
+          <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">battery_charging_full</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 grid grid-cols-12 gap-6 min-h-0">
+      <section class="col-span-8 flex flex-col gap-6 min-h-0">
+        <div class="flex-1 glass-card rounded-xl overflow-hidden relative group">
+          <img id="cam-feed" class="w-full h-full object-cover" alt="video" src="/api/v1/video/stream" />
+          <div class="absolute inset-0 bg-gradient-to-t from-surface/80 to-transparent pointer-events-none"></div>
+          <div class="absolute top-6 left-6 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+            <div class="w-2 h-2 bg-red-500 rounded-full star-pulse"></div>
+            <span id="cam-badge" class="text-xs font-bold tracking-widest">LIVE FEED • 1080P</span>
+          </div>
+          <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end">
+            <div class="text-white/80">
+              <h3 class="text-lg font-bold">视角: 广角巡航</h3>
+              <p class="text-xs opacity-60">坐标: X:<span id="ax-mini">0.0</span>, Y:<span id="ay-mini">0.0</span></p>
+            </div>
+            <div class="flex gap-2">
+              <button class="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all"><span class="material-symbols-outlined">photo_camera</span></button>
+              <button class="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all"><span class="material-symbols-outlined">videocam</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-64 glass-card rounded-xl p-8 flex items-center justify-between">
+          <div class="flex flex-col gap-4">
+            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
+            <div class="flex items-center gap-6">
+              <div class="relative w-40 h-40 rounded-full bg-surface-container-high shadow-inner flex items-center justify-center border border-white/5">
+                <div class="grid grid-cols-3 grid-rows-3 gap-2">
+                  <div class="col-start-2 flex justify-center"><button id="btn-forward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_up</span></button></div>
+                  <div class="row-start-2 flex justify-center"><button id="btn-left" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_left</span></button></div>
+                  <div class="row-start-2 col-start-2 flex justify-center items-center"><button id="btn-stop" class="w-8 h-8 bg-primary rounded-full shadow-[0_0_15px_rgba(253,216,53,0.4)]"></button></div>
+                  <div class="row-start-2 col-start-3 flex justify-center"><button id="btn-right" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_right</span></button></div>
+                  <div class="row-start-3 col-start-2 flex justify-center"><button id="btn-backward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_down</span></button></div>
+                </div>
+              </div>
+              <div class="space-y-4">
+                <div class="p-4 bg-surface-container-low rounded-lg border border-white/5 w-48">
+                  <div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>SPEED</span><span id="speed-pct">75%</span></div>
+                  <div class="h-1.5 w-full bg-surface rounded-full overflow-hidden"><div id="speed-fill" class="h-full bg-primary w-[75%] rounded-full"></div></div>
+                  <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full mt-2" />
+                </div>
+                <div class="flex gap-2">
+                  <button class="flex-1 py-2 bg-slate-700/30 rounded-lg text-xs font-bold hover:bg-slate-700/50 transition-all border border-white/5">自动避障</button>
+                  <button class="flex-1 py-2 bg-slate-700/30 rounded-lg text-xs font-bold hover:bg-slate-700/50 transition-all border border-white/5">跟随模式</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="h-full w-px bg-gradient-to-b from-transparent via-white/10 to-transparent"></div>
+          <div class="flex flex-col gap-3 items-end">
+            <div class="text-right">
+              <span class="text-[10px] text-slate-500 block uppercase mb-1">System Health</span>
+              <div class="flex gap-1"><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div></div>
+            </div>
+            <div class="bg-secondary/10 p-4 rounded-xl border border-secondary/20 flex items-center gap-4">
+              <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+              <div>
+                <p class="text-xs font-bold text-secondary">星宝情绪</p>
+                <p id="emotion-txt" class="text-[10px] text-secondary/70">状态: 开心且好奇</p>
+                <p class="text-[10px] text-secondary/70">对话次数: <span id="dialog-turn-count">0</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="col-span-4 flex flex-col gap-6 min-h-0">
+        <div class="flex-1 glass-card rounded-xl p-6 flex flex-col min-h-0">
+          <div class="flex justify-between items-center mb-4">
+            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">星宝日志</h4>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-primary bg-primary/10 px-2 py-1 rounded">实时更新</span>
+              <button id="btn-clear-memory" class="text-[10px] px-2 py-1 rounded bg-secondary/20 text-secondary hover:bg-secondary/30">清空日志</button>
+            </div>
+          </div>
+          <div id="event-log" class="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar"></div>
+        </div>
+
+        <div class="h-72 glass-card rounded-xl p-6 flex flex-col gap-6">
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">运动能量</h4>
+              <span id="energy-bpm" class="text-[10px] text-secondary">-- BPM</span>
+            </div>
+            <div class="h-16 relative overflow-hidden">
+              <canvas id="energy-canvas" class="w-full h-full"></canvas>
+            </div>
+          </div>
+          <div class="flex-1 flex flex-col">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">3D 姿态感应</h4>
+            <div class="flex-1 flex items-center justify-center relative">
+              <div class="w-24 h-24 border-2 border-primary/20 rounded-full flex items-center justify-center">
+                <div class="w-16 h-16 border border-primary/40 rounded-full rotate-45 flex items-center justify-center">
+                  <div class="w-1 h-16 bg-primary/60 absolute"></div>
+                  <div class="w-16 h-1 bg-primary/60 absolute"></div>
+                </div>
+              </div>
+              <div class="absolute right-0 space-y-2 text-[10px]">
+                <div class="flex justify-between gap-4"><span class="text-slate-500">PITCH</span><span id="pitch" class="text-primary">0.0°</span></div>
+                <div class="flex justify-between gap-4"><span class="text-slate-500">ROLL</span><span id="roll" class="text-primary">0.0°</span></div>
+                <div class="flex justify-between gap-4"><span class="text-slate-500">YAW</span><span id="yaw" class="text-primary">0.0°</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    const seenDialogSigs = new Set();
+    let currentAct = "stop";
+    let heartbeat = null;
+    let energyLevel = 0;
+    let energyPhase = 0;
+
+    function nowTime() {
+      return new Date().toTimeString().slice(0, 8);
+    }
+    function logRow(icon, text, time, colorCls) {
+      const wrap = document.createElement("div");
+      wrap.className = "flex gap-3";
+      wrap.innerHTML =
+        '<div class="w-8 h-8 rounded-full bg-slate-700/40 flex items-center justify-center shrink-0">' +
+        '<span class="material-symbols-outlined text-sm ' + colorCls + '">' + icon + '</span></div>' +
+        '<div class="text-xs"><p class="text-slate-300">' + text + '</p><p class="text-slate-500 mt-1">' + time + '</p></div>';
+      logEl.prepend(wrap);
+      while (logEl.children.length > 120) logEl.removeChild(logEl.lastChild);
+    }
+    function logSystem(msg) { logRow("info", msg, nowTime(), "text-tertiary"); }
+    function logUser(msg) { logRow("face", "你: " + msg, nowTime(), "text-secondary"); }
+    function logAi(msg) { logRow("smart_toy", "星宝: " + msg, nowTime(), "text-primary"); }
+
     function sendMotor(action, durationMs = 0) {
       const q = new URLSearchParams({ action });
       if (durationMs > 0) q.set("duration_ms", String(durationMs));
@@ -265,46 +440,26 @@
       el.addEventListener("touchend", stopMove);
       el.addEventListener("touchcancel", stopMove);
     }
-    function applyStatus(d) {
-      $("robot-state").textContent = d.state || "-";
-      setValue("det-fps", d.fps ?? "-");
-      $("top-fps").textContent = (d.fps ?? "--") + " 帧率";
-      $("mute-state").textContent = d.muted ? "ON" : "OFF";
-      $("state-pill").textContent = "状态: " + (d.state || "-");
-      $("backend-pill").textContent = "后端: " + (d.backend_selected || "-") + "/" + (d.backend_effective || "-");
-      paintBackendBtns(d.backend_selected || "");
-      paintMuteBtn(!!d.muted);
-      if (d.face) {
-        $("face-name").textContent = d.face.name ?? "-";
-        // 监控分数按产品展示需求固定在 0.95~0.99 区间内轻微波动
-        $("face-score").textContent = (0.95 + Math.random() * 0.04).toFixed(2);
-        $("face-emotion").textContent = d.face.emotion ?? "-";
-      } else {
-        $("face-name").textContent = "无";
-        $("face-score").textContent = "-";
-        $("face-emotion").textContent = "-";
-      }
-      if (d.esp32) {
-        setValue("radar-dist", d.esp32.radar_dist ?? "-");
-        setValue("radar-energy", d.esp32.radar_energy ?? "-");
-        setValue("energy-value", d.esp32.radar_energy ?? "0");
-        setValue("energy-mini", d.esp32.radar_energy ?? "0");
-        energyLevel = Number(d.esp32.radar_energy || 0);
-        setValue("ax", d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "-");
-        setValue("ay", d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "-");
-        setValue("az", d.esp32.az != null ? Number(d.esp32.az).toFixed(2) : "-");
-        setValue("gy", d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) : "-");
-        setValue("gyro-mini", d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) : "-");
-        updateMetricBars(d.esp32.radar_energy, d.esp32.gy);
-        updateRadarDot(d.esp32.radar_dist, d.esp32.radar_energy);
-        updateAttitude(d.esp32.gy);
-      }
-      if (Array.isArray(d.dialog_events)) {
-        renderDialogEvents(d.dialog_events);
-      }
+
+    function paintBackend(selected) {
+      const local = String(selected || "").toLowerCase().includes("local");
+      $("btn-backend-local").classList.toggle("bg-primary", local);
+      $("btn-backend-local").classList.toggle("text-[#5b4b00]", local);
+      $("btn-backend-local").classList.toggle("clay-btn", local);
+      $("btn-backend-local").classList.toggle("text-on-surface-variant", !local);
+      $("btn-backend-baidu").classList.toggle("bg-primary", !local);
+      $("btn-backend-baidu").classList.toggle("text-[#5b4b00]", !local);
+      $("btn-backend-baidu").classList.toggle("clay-btn", !local);
+      $("btn-backend-baidu").classList.toggle("text-on-surface-variant", local);
+    }
+    function paintMute(on) {
+      const label = $("btn-mute").querySelector("span:last-child");
+      const icon = $("btn-mute").querySelector("span:first-child");
+      label.textContent = "静音: " + (on ? "ON" : "OFF");
+      icon.textContent = on ? "volume_up" : "volume_off";
     }
     function renderDialogEvents(items) {
-      const start = Math.max(0, items.length - 4);
+      const start = Math.max(0, items.length - 6);
       for (let i = start; i < items.length; i++) {
         const it = items[i] || {};
         const u = String(it.user || "");
@@ -312,140 +467,40 @@
         const sig = u + "||" + a;
         if (!sig || seenDialogSigs.has(sig)) continue;
         seenDialogSigs.add(sig);
-        if (u) addLog("你: " + u, "#b7cdfa");
-        if (a) addLog("星宝: " + a, "#9ef6ff");
+        if (u) logUser(u);
+        if (a) logAi(a);
       }
-      while (seenDialogSigs.size > 1000) seenDialogSigs.clear();
+      if (seenDialogSigs.size > 1500) seenDialogSigs.clear();
     }
-    function setValue(id, value) {
-      const el = $(id);
-      const text = String(value);
-      if (lastValues[id] !== text) {
-        el.textContent = text;
-        el.classList.remove("flash-change");
-        void el.offsetWidth;
-        el.classList.add("flash-change");
-        lastValues[id] = text;
-      } else {
-        el.textContent = text;
+    function applyStatus(d) {
+      $("face-status").textContent = "人脸识别: " + (d.face ? "已激活" : "无目标");
+      paintBackend(d.backend_selected || "local");
+      paintMute(!!d.muted);
+      $("dialog-turn-count").textContent = String(d.dialog_turn_count ?? 0);
+      if (d.face && d.face.emotion) $("emotion-txt").textContent = "状态: " + d.face.emotion;
+      if (d.esp32) {
+        $("ax-mini").textContent = d.esp32.ax != null ? Number(d.esp32.ax).toFixed(1) : "0.0";
+        $("ay-mini").textContent = d.esp32.ay != null ? Number(d.esp32.ay).toFixed(1) : "0.0";
+        $("pitch").textContent = d.esp32.gx != null ? Number(d.esp32.gx).toFixed(1) + "°" : "0.0°";
+        $("roll").textContent = d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) + "°" : "0.0°";
+        $("yaw").textContent = d.esp32.gz != null ? Number(d.esp32.gz).toFixed(1) + "°" : "0.0°";
+        energyLevel = Number(d.esp32.radar_energy || 0);
+        $("energy-bpm").textContent = Math.max(40, Math.min(120, 50 + energyLevel)) + " BPM";
       }
+      if (Array.isArray(d.dialog_events)) renderDialogEvents(d.dialog_events);
+      if (d.fps != null) $("cam-badge").textContent = "LIVE FEED • " + d.fps + " FPS";
     }
-    function updateMetricBars(energy, gy) {
-      const e = Math.max(0, Math.min(300, Number(energy || 0)));
-      const g = Math.max(-180, Math.min(180, Number(gy || 0)));
-      $("energy-bar-fill").style.width = (e / 300 * 100).toFixed(1) + "%";
-      $("gyro-bar-fill").style.width = (Math.abs(g) / 180 * 100).toFixed(1) + "%";
-    }
-    function startEnergyWave() {
-      const canvas = $("energy-canvas");
-      const ctx = canvas.getContext("2d");
-      const points = [];
-      let tick = 0;
 
-      function resizeCanvas() {
-        const r = canvas.getBoundingClientRect();
-        canvas.width = Math.max(40, Math.floor(r.width));
-        canvas.height = Math.max(30, Math.floor(r.height));
-        points.length = 0;
-      }
-
-      function draw() {
-        const w = canvas.width;
-        const h = canvas.height;
-        const mid = h * 0.5;
-        const level = Math.max(0, Math.min(300, energyLevel));
-        const amp = 6 + (level / 300) * 26; // 能量越高，波形振幅越大
-
-        tick += 1;
-        energyWavePhase += 0.10 + (level / 300) * 0.10; // 能量升高时频率略提升
-        const wave =
-          Math.sin(energyWavePhase) * 0.70 +
-          Math.sin(energyWavePhase * 0.52 + tick * 0.01) * 0.35 +
-          Math.sin(energyWavePhase * 1.8 + 0.8) * 0.12;
-        const noise = (Math.sin(tick * 0.15) + Math.sin(tick * 0.047)) * 0.06;
-        const y = mid - (wave + noise) * amp;
-
-        points.push(y);
-        while (points.length > w) points.shift();
-
-        ctx.clearRect(0, 0, w, h);
-
-        // 网格与基线
-        ctx.strokeStyle = "rgba(70,110,150,0.18)";
-        ctx.lineWidth = 1;
-        for (let gy = 10; gy < h; gy += 14) {
-          ctx.beginPath();
-          ctx.moveTo(0, gy);
-          ctx.lineTo(w, gy);
-          ctx.stroke();
-        }
-        ctx.strokeStyle = "rgba(49, 189, 220, 0.45)";
-        ctx.beginPath();
-        ctx.moveTo(0, mid);
-        ctx.lineTo(w, mid);
-        ctx.stroke();
-
-        // 发光波形
-        ctx.lineWidth = 2;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = "rgba(38,221,255,0.75)";
-        ctx.strokeStyle = "#26ddff";
-        ctx.beginPath();
-        for (let i = 0; i < points.length; i++) {
-          const x = w - points.length + i;
-          if (i === 0) ctx.moveTo(x, points[i]);
-          else ctx.lineTo(x, points[i]);
-        }
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        requestAnimationFrame(draw);
-      }
-
-      resizeCanvas();
-      window.addEventListener("resize", resizeCanvas);
-      draw();
-    }
-    function paintBackendBtns(sel) {
-      const isLocal = String(sel).toLowerCase().includes("local");
-      $("btn-backend-local").style.color = isLocal ? "#7fd8ff" : "#9eb2c8";
-      $("btn-backend-baidu").style.color = isLocal ? "#9eb2c8" : "#7fd8ff";
-    }
-    function paintMuteBtn(on) {
-      $("btn-mute").textContent = "静音:" + (on ? "ON" : "OFF");
-      $("btn-mute").style.color = on ? "#ff9a9a" : "#ffca8e";
-    }
-    function updateRadarDot(dist, energy) {
-      const dot = $("radar-dot");
-      const d = Math.max(20, Math.min(300, Number(dist || 120)));
-      const e = Math.max(0, Math.min(300, Number(energy || 0)));
-      const r = Math.max(10, Math.min(46, 8 + (d / 300) * 38));
-      const a = (Date.now() / 17 + e * 3) % 360;
-      const rad = a * Math.PI / 180;
-      const x = 58 + Math.cos(rad) * r;
-      const y = 58 + Math.sin(rad) * r;
-      dot.style.left = x + "px";
-      dot.style.top = y + "px";
-      const glow = 7 + Math.min(12, e / 18);
-      dot.style.boxShadow = "0 0 " + glow + "px #3eefff";
-    }
-    function updateAttitude(gy) {
-      const v = Math.max(-45, Math.min(45, Number(gy || 0)));
-      $("att-needle").style.transform = "translate(-50%, -50%) rotate(" + v + "deg)";
-    }
     async function setBackend(mode) {
       try {
-        const res = await fetch("/backend?mode=" + encodeURIComponent(mode));
+        const res = await fetch("/api/v1/backend?mode=" + encodeURIComponent(mode));
         const j = await res.json();
-        if (j.backend_selected) paintBackendBtns(j.backend_selected);
-        addLog("后端切换: " + (mode || "status"), "#7fd8ff");
+        if (j.backend_selected) paintBackend(j.backend_selected);
+        logSystem("后端切换: " + mode);
       } catch (_) {}
     }
-    async function setMute(mode) {
-      try {
-        await fetch("/mute?mode=" + encodeURIComponent(mode));
-        addLog("静音切换: " + mode, "#ffd59e");
-      } catch (_) {}
+    async function toggleMute() {
+      try { await fetch("/api/v1/mute?mode=toggle"); } catch (_) {}
     }
     async function clearMemory() {
       try {
@@ -454,46 +509,89 @@
         if (j && j.ok) {
           seenDialogSigs.clear();
           logEl.innerHTML = "";
-          addLog("记忆已清除", "#ffb2a8");
+          logSystem("日志与记忆已清空");
+          $("dialog-turn-count").textContent = "0";
         } else {
-          addLog("清除记忆失败", "#ff9a9a");
+          logSystem("清空失败");
         }
-      } catch (_) {
-        addLog("清除记忆失败", "#ff9a9a");
-      }
+      } catch (_) { logSystem("清空失败"); }
     }
     function connectSSE() {
-      const es = new EventSource("/status");
-      es.onopen = () => {
-        $("uplink-text").textContent = "上行链路激活";
-        $("uplink-dot").style.background = "#00daf3";
-        $("uplink-dot").style.boxShadow = "0 0 8px #00daf3";
-        addLog("SSE /status 连接成功", "#00daf3");
-      };
+      const es = new EventSource("/api/v1/status/stream");
+      es.onopen = () => logSystem("状态流已连接");
       es.onmessage = (e) => { try { applyStatus(JSON.parse(e.data)); } catch (_) {} };
-      es.onerror = () => { $("uplink-text").textContent = "SSE 重连中"; };
+      es.onerror = () => {};
     }
     async function pollState() {
       try {
-        const t0 = performance.now();
         const res = await fetch("/api/v1/app/state");
-        const json = await res.json();
-        $("latency").textContent = "延迟: " + Math.max(1, Math.round(performance.now() - t0)) + "ms";
-        if (json && json.status) applyStatus(json.status);
+        const j = await res.json();
+        if (j && j.status) applyStatus(j.status);
       } catch (_) {}
     }
-    const tick = () => { $("clock").textContent = new Date().toTimeString().slice(0, 8); };
-    tick(); setInterval(tick, 1000);
+    function startWave() {
+      const canvas = $("energy-canvas");
+      const ctx = canvas.getContext("2d");
+      const points = [];
+      function resize() {
+        const r = canvas.getBoundingClientRect();
+        canvas.width = Math.max(50, Math.floor(r.width));
+        canvas.height = Math.max(50, Math.floor(r.height));
+        points.length = 0;
+      }
+      resize();
+      window.addEventListener("resize", resize);
+      function draw() {
+        const w = canvas.width, h = canvas.height, mid = h * 0.5;
+        const level = Math.max(0, Math.min(300, energyLevel));
+        const amp = 5 + (level / 300) * 20;
+        energyPhase += 0.08 + (level / 300) * 0.08;
+        const y = mid - (Math.sin(energyPhase) * 0.75 + Math.sin(energyPhase * 1.7) * 0.25) * amp;
+        points.push(y);
+        while (points.length > w) points.shift();
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = "rgba(239,177,249,0.26)";
+        ctx.lineWidth = 1;
+        for (let gy = 8; gy < h; gy += 14) {
+          ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+        }
+        ctx.strokeStyle = "#efb1f9";
+        ctx.lineWidth = 2.8;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(239,177,249,0.65)";
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const x = w - points.length + i;
+          if (i === 0) ctx.moveTo(x, points[i]); else ctx.lineTo(x, points[i]);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        requestAnimationFrame(draw);
+      }
+      draw();
+    }
+
     bindHold("btn-forward", "forward");
     bindHold("btn-backward", "backward");
     bindHold("btn-left", "left");
     bindHold("btn-right", "right");
     $("btn-stop").addEventListener("click", stopMove);
-    $("speed-range").addEventListener("input", (e) => { $("speed-value").textContent = e.target.value; });
+    $("btn-stop-all").addEventListener("click", stopMove);
+    $("btn-backend-local").addEventListener("click", () => setBackend("local"));
+    $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
+    $("btn-mute").addEventListener("click", toggleMute);
+    $("btn-clear-memory").addEventListener("click", clearMemory);
+
+    $("speed-range").addEventListener("input", (e) => {
+      const val = Math.max(0, Math.min(100, Number(e.target.value || 0)));
+      $("speed-fill").style.width = val + "%";
+      $("speed-pct").textContent = val + "%";
+    });
     $("speed-range").addEventListener("change", (e) => {
-      const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value) * 2.55)));
+      const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value || 0) * 2.55)));
       sendMotor("speed:" + v);
-      addLog("设置速度: " + v, "#7fd8ff");
+      logSystem("速度调整: " + v);
     });
     window.addEventListener("keydown", (e) => {
       if (e.repeat) return;
@@ -504,16 +602,809 @@
       if (e.key === " ") stopMove();
     });
     window.addEventListener("keyup", (e) => { if (["w", "a", "s", "d", " "].includes(e.key)) stopMove(); });
-    $("btn-backend-local").addEventListener("click", () => setBackend("local"));
-    $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
-    $("btn-backend-toggle").addEventListener("click", () => setBackend("toggle"));
-    $("btn-mute").addEventListener("click", () => setMute("toggle"));
-    $("btn-clear-memory").addEventListener("click", clearMemory);
+
     connectSSE();
     pollState();
-    setInterval(pollState, 1200);
-    startEnergyWave();
-    addLog("控制台已按新样式加载");
+    setInterval(pollState, 1400);
+    startWave();
+    logSystem("控制台已加载");
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Gem Console</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #070c2d;
+      --bg-soft: #10173f;
+      --panel: #151d4a;
+      --panel-2: #1a2459;
+      --panel-3: #1c2253;
+      --text: #eef3ff;
+      --muted: #9ea7d8;
+      --line: #2f396f;
+      --yellow: #f4dd45;
+      --orange: #ff7a4f;
+      --purple: #b78cff;
+      --cyan: #6dd3ff;
+      --green: #4de29a;
+      --danger: #ff6c4e;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      background: radial-gradient(1200px 800px at 15% -20%, #152364 0%, #070c2d 42%, #060a27 100%);
+      color: var(--text);
+      font-family: "Space Grotesk", sans-serif;
+      overflow: hidden;
+    }
+    .app {
+      width: 100%;
+      height: 100%;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(29, 38, 90, 0.95), rgba(20, 29, 74, 0.95));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .sidebar {
+      padding: 16px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .avatar {
+      width: 62px;
+      height: 62px;
+      border-radius: 999px;
+      border: 2px solid #3d4f96;
+      box-shadow: 0 0 0 4px rgba(76, 98, 174, 0.28), 0 0 22px rgba(244, 221, 69, 0.25);
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      color: var(--yellow);
+      background: radial-gradient(circle at 30% 20%, #243269, #131d4b);
+    }
+    .brand-title { font-weight: 700; color: #ffd05d; }
+    .brand-sub { color: var(--muted); font-size: 12px; }
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .menu-item {
+      height: 44px;
+      border-radius: 22px;
+      border: 1px solid transparent;
+      color: #c7d3ff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      font-size: 19px;
+      cursor: default;
+      user-select: none;
+    }
+    .menu-item span { font-size: 20px; }
+    .menu-item b { font-weight: 500; font-size: 20px; }
+    .menu-item.active {
+      background: rgba(255, 214, 94, 0.12);
+      border-color: rgba(255, 214, 94, 0.35);
+      color: #ffe17b;
+    }
+    .emergency {
+      margin-top: auto;
+      height: 52px;
+      border-radius: 26px;
+      border: none;
+      background: linear-gradient(135deg, #ff8d5d, #ff6d4f);
+      color: #2a1020;
+      font-weight: 700;
+      font-size: 30px;
+      cursor: pointer;
+    }
+    .main {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 56px;
+      padding: 6px 4px;
+    }
+    .mode-switch {
+      background: #131b45;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 320px;
+    }
+    .mode-btn {
+      flex: 1;
+      height: 38px;
+      border-radius: 20px;
+      border: none;
+      color: #bfc9f0;
+      background: transparent;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .mode-btn.active {
+      color: #2f2d17;
+      background: linear-gradient(135deg, #f7ea56, #f4c52e);
+    }
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .state-pill {
+      background: #2a1f56;
+      color: #cebfff;
+      border: 1px solid #5b4d96;
+      border-radius: 18px;
+      padding: 8px 12px;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: #9d84ff; box-shadow: 0 0 10px #9d84ff; }
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: #151d49;
+      border: 1px solid var(--line);
+      color: #d2dbff;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .content {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 290px;
+      gap: 14px;
+    }
+    .left {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 230px;
+      gap: 14px;
+    }
+    .video-card {
+      padding: 10px;
+      display: flex;
+      min-height: 0;
+    }
+    .video-frame {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid #384784;
+      background: #050915;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+    .video-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+      display: block;
+    }
+    .live-tag {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      background: rgba(16, 13, 35, 0.85);
+      border: 1px solid #3f4b80;
+      color: #f0d7b2;
+      border-radius: 14px;
+      padding: 5px 10px;
+      font-size: 12px;
+      letter-spacing: .08em;
+    }
+    .live-tag::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #ff5d57;
+      display: inline-block;
+      margin-right: 8px;
+      box-shadow: 0 0 10px #ff5d57;
+    }
+    .cam-bottom {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      color: #dce5ff;
+      font-size: 14px;
+      text-shadow: 0 2px 10px rgba(0,0,0,.7);
+    }
+    .cam-bottom small { display: block; color: #9aabd5; margin-top: 2px; font-size: 11px; }
+    .cam-actions {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      display: flex;
+      gap: 10px;
+    }
+    .cam-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid #4a588f;
+      background: rgba(22, 28, 64, .85);
+      color: #d8e4ff;
+      font-size: 18px;
+    }
+    .bottom-panels {
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 14px;
+      min-height: 0;
+    }
+    .motor-block h4, .energy-block h4 { margin: 0 0 10px 0; font-size: 12px; color: #c6d1ff; letter-spacing: .12em; text-transform: uppercase; }
+    .motor-main {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      align-items: center;
+    }
+    .dpad {
+      width: 120px;
+      height: 120px;
+      border-radius: 999px;
+      border: 1px solid #394a88;
+      background: radial-gradient(circle at 50% 45%, #212e66, #161f50);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      padding: 10px;
+      gap: 8px;
+    }
+    .dpad button {
+      border-radius: 999px;
+      border: 1px solid #4a5c99;
+      background: #1d285f;
+      color: #c8d8ff;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .dpad .mid { background: #f0d740; color: #22223b; border: none; font-weight: 700; }
+    .speed-wrap { display: flex; align-items: center; gap: 10px; }
+    .speed-bar { flex: 1; height: 12px; border-radius: 7px; background: #121b46; border: 1px solid #32427c; overflow: hidden; }
+    .speed-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #f6b64e, #f3df52); transition: width .2s ease; }
+    .speed-num { color: #cfd9ff; font-size: 12px; width: 40px; text-align: right; }
+    .switches { margin-top: 10px; display: flex; gap: 10px; }
+    .switches button { flex: 1; height: 34px; border-radius: 16px; border: 1px solid #3b4a82; background: #1a2558; color: #d2ddff; }
+    .memory-pill {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-radius: 16px;
+      background: #2b1f58;
+      border: 1px solid #5a4590;
+      padding: 8px 10px;
+      color: #e2d6ff;
+      font-size: 12px;
+    }
+    .memory-pill b { color: #f3e6ff; }
+    .energy-block .energy-top {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      color: #c4d0ff;
+      font-size: 12px;
+    }
+    .wave-wrap {
+      height: 92px;
+      border-radius: 12px;
+      border: 1px solid #32427a;
+      background: #0f173f;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .wave-wrap canvas { width: 100%; height: 100%; display: block; }
+    .pose {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .pose-disc {
+      width: 74px;
+      height: 74px;
+      border-radius: 999px;
+      border: 1px solid #4a5b93;
+      position: relative;
+    }
+    .pose-disc::before, .pose-disc::after {
+      content: "";
+      position: absolute;
+      background: #bfa443;
+      opacity: .9;
+    }
+    .pose-disc::before { width: 2px; height: 56px; left: 36px; top: 9px; transform: rotate(35deg); }
+    .pose-disc::after { width: 56px; height: 2px; left: 9px; top: 36px; transform: rotate(35deg); }
+    .pose-metrics { font-size: 11px; color: #d5ddff; line-height: 1.7; }
+    .pose-metrics span { display: block; color: #a5b0dd; }
+    .right {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 230px;
+      gap: 14px;
+    }
+    .log-card {
+      padding: 14px 12px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .log-title { font-size: 13px; font-weight: 700; letter-spacing: .06em; color: #d7deff; }
+    .clear-btn {
+      border: 1px solid #5b4a90;
+      background: #2b2359;
+      color: #d4c8ff;
+      border-radius: 14px;
+      height: 28px;
+      padding: 0 10px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .log-list {
+      min-height: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-right: 4px;
+      scrollbar-width: thin;
+    }
+    .log-item {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: #c9d4ff;
+      font-size: 12px;
+      border-bottom: 1px dashed rgba(255,255,255,.06);
+      padding-bottom: 8px;
+    }
+    .log-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      border: 1px solid #48578e;
+      color: #dce8ff;
+      background: #21306b;
+    }
+    .log-meta { color: #8f9dd2; font-size: 11px; margin-top: 3px; }
+    .log-user { color: #b7cdfa; }
+    .log-ai { color: #9ef6ff; }
+    .mini-card {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+    }
+    .mini-card .k { color: #9ca7d8; font-size: 12px; }
+    .mini-card .v { font-size: 26px; color: #f4dd45; font-weight: 700; }
+    @media (max-width: 1320px) {
+      .app { grid-template-columns: 190px 1fr; }
+      .content { grid-template-columns: 1fr 260px; }
+      .menu-item b { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar card">
+      <div class="brand">
+        <div class="avatar">☺</div>
+        <div class="brand-title">星宝 Star Gem</div>
+        <div class="brand-sub">你的童芯伙伴</div>
+      </div>
+      <div class="menu">
+        <div class="menu-item active"><span>⌁</span><b>Telemetry</b></div>
+        <div class="menu-item"><span>⚙</span><b>Motors</b></div>
+        <div class="menu-item"><span>◉</span><b>Sensors</b></div>
+        <div class="menu-item"><span>📖</span><b>Diary</b></div>
+      </div>
+      <button class="emergency" id="btn-stop-all">✱ Emergency Stop</button>
+    </aside>
+
+    <section class="main">
+      <div class="topbar">
+        <div class="mode-switch">
+          <button id="btn-backend-local" class="mode-btn active">本地模式</button>
+          <button id="btn-backend-baidu" class="mode-btn">云端同步</button>
+        </div>
+        <div class="top-right">
+          <button id="btn-mute" class="icon-btn" title="静音切换">🔇</button>
+          <div class="state-pill"><span class="dot"></span><span id="face-state">人脸识别: 已激活</span></div>
+          <button class="icon-btn">⚙</button>
+          <button class="icon-btn">🔔</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="left">
+          <div class="video-card card">
+            <div class="video-frame">
+              <div class="live-tag">LIVE FEED • <span id="cam-fps">1080P</span></div>
+              <img src="/api/v1/video/stream" alt="camera stream" />
+              <div class="cam-bottom">
+                视角：广角巡航
+                <small>坐标: X:<span id="ax-mini">0.0</span>, Y:<span id="ay-mini">0.0</span></small>
+              </div>
+              <div class="cam-actions">
+                <button class="cam-btn">📷</button>
+                <button class="cam-btn">🎥</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="bottom-panels card">
+            <div class="motor-block">
+              <h4>运动控制</h4>
+              <div class="motor-main">
+                <div class="dpad">
+                  <div></div><button id="btn-forward">⌃</button><div></div>
+                  <button id="btn-left">‹</button><button class="mid" id="btn-stop">●</button><button id="btn-right">›</button>
+                  <div></div><button id="btn-backward">⌄</button><div></div>
+                </div>
+                <div>
+                  <div class="speed-wrap">
+                    <div class="small-label">SPEED</div>
+                    <div class="speed-bar"><div class="speed-fill" id="speed-fill"></div></div>
+                    <div class="speed-num"><span id="speed-value">75</span>%</div>
+                  </div>
+                  <input id="speed-range" type="range" min="0" max="100" value="75" style="width:100%; margin-top:10px;">
+                  <div class="switches">
+                    <button>自动巡逻</button>
+                    <button>跟随模式</button>
+                  </div>
+                  <div class="memory-pill">
+                    <div>星宝情绪<br><b id="emotion-mini">状态: 开心且好奇</b></div>
+                    <div><small>对话次数</small><br><b id="dialog-turn-count">0</b></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="energy-block">
+              <h4>运动能量</h4>
+              <div class="energy-top"><span>ENERGY</span><span id="energy-bpm">-- BPM</span></div>
+              <div class="wave-wrap"><canvas id="energy-canvas"></canvas></div>
+              <div class="pose">
+                <div class="pose-disc"></div>
+                <div class="pose-metrics">
+                  <span>PITCH <b id="pitch">0.0°</b></span>
+                  <span>ROLL <b id="roll">0.0°</b></span>
+                  <span>YAW <b id="yaw">0.0°</b></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="log-card card">
+            <div class="log-header">
+              <div class="log-title">星宝日志</div>
+              <button id="btn-clear-memory" class="clear-btn">清空日志/记忆</button>
+            </div>
+            <div id="event-log" class="log-list"></div>
+          </div>
+          <div class="mini-card card">
+            <div class="k">状态</div>
+            <div class="v" id="robot-state">waiting</div>
+            <div class="k">检测 FPS: <span id="det-fps">0</span> · 静音: <span id="mute-state">OFF</span></div>
+            <div class="k">后端: <span id="backend-pill">local/local</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    let currentAct = "stop";
+    let heartbeat = null;
+    const seenDialogSigs = new Set();
+    let energyLevel = 0;
+    let energyPhase = 0;
+    const lastValues = {};
+
+    function nowTime() {
+      const d = new Date();
+      return d.toTimeString().slice(0, 8);
+    }
+
+    function pushLog(text, type = "sys") {
+      const row = document.createElement("div");
+      row.className = "log-item";
+      const icon = type === "user" ? "🙂" : (type === "ai" ? "🤖" : "●");
+      const cls = type === "user" ? "log-user" : (type === "ai" ? "log-ai" : "");
+      row.innerHTML =
+        '<div class="log-icon">' + icon + '</div>' +
+        '<div><div class="' + cls + '">' + text + '</div><div class="log-meta">' + nowTime() + '</div></div>';
+      logEl.prepend(row);
+      while (logEl.children.length > 120) logEl.removeChild(logEl.lastChild);
+    }
+
+    function setValue(id, value) {
+      const el = $(id);
+      if (!el) return;
+      const text = String(value);
+      if (lastValues[id] !== text) {
+        el.textContent = text;
+        lastValues[id] = text;
+      }
+    }
+
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => { if (currentAct !== "stop") sendMotor(currentAct); }, 150);
+    }
+    function stopMove() {
+      currentAct = "stop";
+      clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+    function bindHold(id, action) {
+      const el = $(id);
+      el.addEventListener("mousedown", () => startMove(action));
+      el.addEventListener("mouseup", stopMove);
+      el.addEventListener("mouseleave", stopMove);
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      el.addEventListener("touchend", stopMove);
+      el.addEventListener("touchcancel", stopMove);
+    }
+
+    function renderDialogEvents(items) {
+      const start = Math.max(0, items.length - 6);
+      for (let i = start; i < items.length; i++) {
+        const it = items[i] || {};
+        const u = String(it.user || "");
+        const a = String(it.assistant || "");
+        const sig = u + "||" + a;
+        if (!sig || seenDialogSigs.has(sig)) continue;
+        seenDialogSigs.add(sig);
+        if (u) pushLog("你: " + u, "user");
+        if (a) pushLog("星宝: " + a, "ai");
+      }
+      if (seenDialogSigs.size > 1500) seenDialogSigs.clear();
+    }
+
+    function paintBackend(selected) {
+      const isLocal = String(selected || "").toLowerCase().includes("local");
+      $("btn-backend-local").classList.toggle("active", isLocal);
+      $("btn-backend-baidu").classList.toggle("active", !isLocal);
+      setValue("backend-pill", (selected || "-") + "/" + (selected || "-"));
+    }
+
+    function paintMute(on) {
+      setValue("mute-state", on ? "ON" : "OFF");
+      $("btn-mute").textContent = on ? "🔈" : "🔇";
+    }
+
+    function applyStatus(d) {
+      setValue("robot-state", d.state || "-");
+      setValue("det-fps", d.fps ?? "-");
+      setValue("cam-fps", (d.fps ?? "--") + " FPS");
+      setValue("face-state", "人脸识别: " + (d.face ? "已激活" : "无目标"));
+      setValue("dialog-turn-count", d.dialog_turn_count ?? 0);
+      paintBackend(d.backend_selected || "local");
+      paintMute(!!d.muted);
+
+      if (d.face) {
+        setValue("emotion-mini", "状态: " + (d.face.emotion || "ZhongXing"));
+      }
+      if (d.esp32) {
+        const e = Number(d.esp32.radar_energy || 0);
+        energyLevel = e;
+        setValue("energy-bpm", Math.max(40, Math.min(120, 50 + e)) + " BPM");
+        setValue("ax-mini", d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "0.0");
+        setValue("ay-mini", d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "0.0");
+        setValue("pitch", d.esp32.gx != null ? Number(d.esp32.gx).toFixed(1) + "°" : "0.0°");
+        setValue("roll", d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) + "°" : "0.0°");
+        setValue("yaw", d.esp32.gz != null ? Number(d.esp32.gz).toFixed(1) + "°" : "0.0°");
+      }
+      if (Array.isArray(d.dialog_events)) renderDialogEvents(d.dialog_events);
+    }
+
+    async function setBackend(mode) {
+      try {
+        const res = await fetch("/api/v1/backend?mode=" + encodeURIComponent(mode));
+        const j = await res.json();
+        if (j.backend_selected) paintBackend(j.backend_selected);
+        pushLog("后端切换: " + mode);
+      } catch (_) {}
+    }
+    async function setMuteToggle() {
+      try {
+        await fetch("/api/v1/mute?mode=toggle");
+      } catch (_) {}
+    }
+    async function clearMemory() {
+      try {
+        const res = await fetch("/api/v1/memory/clear", { method: "POST" });
+        const j = await res.json();
+        if (j && j.ok) {
+          seenDialogSigs.clear();
+          logEl.innerHTML = "";
+          pushLog("记忆与日志已清空");
+          setValue("dialog-turn-count", 0);
+        } else {
+          pushLog("清除失败");
+        }
+      } catch (_) { pushLog("清除失败"); }
+    }
+
+    function connectStatusSSE() {
+      const es = new EventSource("/api/v1/status/stream");
+      es.onopen = () => pushLog("状态流已连接");
+      es.onmessage = (e) => { try { applyStatus(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = () => {};
+    }
+
+    async function pollState() {
+      try {
+        const res = await fetch("/api/v1/app/state");
+        const j = await res.json();
+        if (j && j.status) applyStatus(j.status);
+      } catch (_) {}
+    }
+
+    function startWave() {
+      const canvas = $("energy-canvas");
+      const ctx = canvas.getContext("2d");
+      const points = [];
+      let t = 0;
+
+      function resize() {
+        const r = canvas.getBoundingClientRect();
+        canvas.width = Math.max(50, Math.floor(r.width));
+        canvas.height = Math.max(50, Math.floor(r.height));
+        points.length = 0;
+      }
+      resize();
+      window.addEventListener("resize", resize);
+
+      function draw() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const mid = h * 0.5;
+        const level = Math.max(0, Math.min(300, Number(energyLevel || 0)));
+        const amp = 5 + (level / 300) * 20;
+        t += 1;
+        energyPhase += 0.08 + (level / 300) * 0.08;
+        const y = mid - (Math.sin(energyPhase) * 0.75 + Math.sin(energyPhase * 1.7) * 0.25) * amp;
+        points.push(y);
+        while (points.length > w) points.shift();
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = "rgba(124,154,255,0.18)";
+        ctx.lineWidth = 1;
+        for (let gy = 8; gy < h; gy += 14) {
+          ctx.beginPath();
+          ctx.moveTo(0, gy);
+          ctx.lineTo(w, gy);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "#d68cff";
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = "rgba(214,140,255,0.65)";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const x = w - points.length + i;
+          if (i === 0) ctx.moveTo(x, points[i]);
+          else ctx.lineTo(x, points[i]);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        requestAnimationFrame(draw);
+      }
+      draw();
+    }
+
+    bindHold("btn-forward", "forward");
+    bindHold("btn-backward", "backward");
+    bindHold("btn-left", "left");
+    bindHold("btn-right", "right");
+    $("btn-stop").addEventListener("click", stopMove);
+    $("btn-stop-all").addEventListener("click", stopMove);
+
+    $("speed-range").addEventListener("input", (e) => {
+      const val = Number(e.target.value || 0);
+      $("speed-value").textContent = String(val);
+      $("speed-fill").style.width = val + "%";
+    });
+    $("speed-range").addEventListener("change", (e) => {
+      const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value || 0) * 2.55)));
+      sendMotor("speed:" + v);
+      pushLog("速度调整: " + v);
+    });
+
+    $("btn-backend-local").addEventListener("click", () => setBackend("local"));
+    $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
+    $("btn-mute").addEventListener("click", setMuteToggle);
+    $("btn-clear-memory").addEventListener("click", clearMemory);
+
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      if (e.key === "w") startMove("forward");
+      if (e.key === "s") startMove("backward");
+      if (e.key === "a") startMove("left");
+      if (e.key === "d") startMove("right");
+      if (e.key === " ") stopMove();
+    });
+    window.addEventListener("keyup", (e) => {
+      if (["w", "a", "s", "d", " "].includes(e.key)) stopMove();
+    });
+
+    $("speed-fill").style.width = "75%";
+    connectStatusSSE();
+    pollState();
+    setInterval(pollState, 1400);
+    startWave();
+    pushLog("控制台已加载");
   </script>
 </body>
 </html>

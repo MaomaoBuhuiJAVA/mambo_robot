@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星宝 Star Gem - 控制中心</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            secondary: "#efb1f9",
+            tertiary: "#a0e0ff",
+            surface: "#0b0c1f",
+            "surface-container": "#16172e",
+            "surface-container-low": "#101126",
+            "surface-container-high": "#1c1d36",
+            "surface-container-highest": "#22233e",
+            "surface-variant": "#22233e",
+            "on-surface": "#e4e3fe",
+            "on-surface-variant": "#a9a9c2",
+            primary: "#fdd835",
+            error: "#ff7351",
+            outline: "#73738b",
+            "outline-variant": "#46465b"
+          },
+          fontFamily: {
+            headline: ["Plus Jakarta Sans", "sans-serif"],
+            body: ["Plus Jakarta Sans", "sans-serif"],
+            label: ["Plus Jakarta Sans", "sans-serif"]
+          },
+          borderRadius: { DEFAULT: "1rem", lg: "2rem", xl: "3rem", full: "9999px" }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #0b0c1f;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(253, 216, 53, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(239, 177, 249, 0.08) 0%, transparent 40%);
+      font-family: "Plus Jakarta Sans", sans-serif;
+      color: #e4e3fe;
+      overflow: hidden;
+    }
+    .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24; }
+    .glass-card { background: rgba(34, 35, 62, 0.4); backdrop-filter: blur(20px); border: 1px solid rgba(228, 227, 254, 0.05); }
+    .clay-btn { box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(0, 0, 0, 0.2); }
+    .star-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .7; transform: scale(0.95);} }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,.05); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(253,216,53,.2); border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(253,216,53,.4); }
+    .feature-toggle {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(71, 85, 105, 0.28);
+      color: #e4e3fe;
+    }
+    .feature-toggle.active {
+      border-color: rgba(253, 216, 53, 0.5);
+      background: rgba(253, 216, 53, 0.28);
+      color: #5b4b00;
+      box-shadow: 0 0 0 1px rgba(253, 216, 53, 0.25) inset;
+    }
+    .gyro-3d-wrap { perspective: 700px; }
+    .gyro-3d-shell {
+      width: 108px;
+      height: 108px;
+      border-radius: 9999px;
+      border: 1px solid rgba(253, 216, 53, 0.25);
+      background: radial-gradient(circle at 30% 25%, rgba(253, 216, 53, 0.16), rgba(11, 12, 31, 0.2) 65%);
+      transform-style: preserve-3d;
+      transition: transform 140ms ease-out;
+      box-shadow: inset 0 0 20px rgba(253, 216, 53, 0.08), 0 10px 25px rgba(0, 0, 0, 0.35);
+    }
+    .gyro-ring {
+      position: absolute;
+      inset: 50%;
+      border-radius: 9999px;
+      border: 1px solid rgba(253, 216, 53, 0.45);
+      transform-style: preserve-3d;
+      transition: transform 140ms ease-out;
+    }
+    .gyro-ring-x { width: 84px; height: 84px; margin-left: -42px; margin-top: -42px; transform: rotateX(75deg); }
+    .gyro-ring-y { width: 72px; height: 72px; margin-left: -36px; margin-top: -36px; transform: rotateY(75deg); }
+    .gyro-ring-z { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+  </style>
+</head>
+<body class="h-screen flex">
+  <aside class="fixed left-0 top-0 h-full flex flex-col py-8 z-40 bg-[#0b0c1f]/80 backdrop-blur-2xl w-72 rounded-r-[3rem] shadow-[20px_0_40px_rgba(14,12,31,0.6)]">
+    <div class="px-8 mb-10 flex flex-col items-center">
+      <div class="relative mb-4">
+        <div class="w-20 h-20 rounded-full bg-primary/20 p-1 ring-2 ring-primary/30">
+          <img class="w-full h-full object-cover rounded-full" alt="star gem" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkBfR0cIxz8Wyfs_c8gYOpjTAKck9djuVr-ht0qTYLlO4QvMN3BMuFhIgJeLz4-vhto1ODbTufSCxwwKYM8KIdA0xJLV4AKapr3oqMlKkBHoV4axs__NXQPosD0ruTMo4rYPzWA971_rQvfJJQrrTgklZIISVAyi84e7b8cM2MfuApIbCpiUbM_dM4xskjPreCICLbIhp6bg_SGmOFC3zPpOSAJ2CyAVWnbLlhjV88OznVKUvNmkUhnOkJyYoy-TycNoWU9qQ9eg" />
+        </div>
+        <div class="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-4 border-[#0b0c1f] rounded-full"></div>
+      </div>
+      <h1 class="text-lg font-black text-yellow-400">星宝 Star Gem</h1>
+      <p class="text-slate-400 text-xs mt-1">你的星空伙伴</p>
+    </div>
+    <nav class="flex-1 px-4 space-y-2">
+      <a class="flex items-center gap-4 bg-yellow-400/10 text-yellow-400 rounded-full px-6 py-4 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
+      <a class="flex items-center gap-4 text-slate-400 px-6 py-4 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
+    </nav>
+    <div class="px-6 mt-auto">
+      <button id="btn-stop-all" class="w-full bg-error text-[#450900] py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all">
+        <span class="material-symbols-outlined">emergency</span>Emergency Stop
+      </button>
+    </div>
+  </aside>
+
+  <main class="flex-1 ml-72 p-6 flex flex-col gap-6 overflow-hidden">
+    <header class="flex justify-between items-center w-full px-4 py-2 bg-slate-800/20 rounded-full backdrop-blur-xl">
+      <div class="flex items-center gap-3">
+        <div class="flex p-1 bg-surface-container rounded-full">
+          <button id="btn-backend-local" class="px-6 py-2 rounded-full bg-primary text-[#5b4b00] text-sm font-bold clay-btn">本地模式</button>
+          <button id="btn-backend-baidu" class="px-6 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">云端同步</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button id="btn-mute" class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
+          <span class="material-symbols-outlined text-sm">volume_off</span><span class="text-xs font-semibold">静音: OFF</span>
+        </button>
+        <div class="flex items-center gap-2 text-secondary px-4 py-2 bg-secondary/10 rounded-full">
+          <span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1;">face</span>
+          <span id="face-status" class="text-xs font-semibold">人脸识别: 已激活</span>
+        </div>
+        <div class="flex gap-2">
+          <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">settings</span>
+          <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">battery_charging_full</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 grid grid-cols-12 gap-5 min-h-0">
+      <section class="col-span-9 flex flex-col gap-5 min-h-0">
+        <div class="flex-1 glass-card rounded-xl overflow-hidden relative group">
+          <img id="cam-feed" class="w-full h-full object-contain bg-black" alt="video" src="/api/v1/video/stream" />
+          <div class="absolute inset-0 bg-gradient-to-t from-surface/80 to-transparent pointer-events-none"></div>
+          <div class="absolute top-6 left-6 flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+            <div class="w-2 h-2 bg-red-500 rounded-full star-pulse"></div>
+            <span id="cam-badge" class="text-xs font-bold tracking-widest">LIVE FEED • 1080P</span>
+          </div>
+          <div class="absolute top-6 right-6 bg-black/50 backdrop-blur-md px-3 py-2 rounded-full border border-white/10 text-xs">
+            <span class="text-slate-300">识别人像: </span><span id="face-person" class="text-primary font-semibold">未识别</span>
+          </div>
+          <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end">
+            <div class="text-white/80">
+              <h3 class="text-lg font-bold">视角: 广角巡航</h3>
+              <p class="text-xs opacity-60">坐标: X:<span id="ax-mini">0.0</span>, Y:<span id="ay-mini">0.0</span></p>
+            </div>
+            <div class="flex gap-2">
+              <button class="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all"><span class="material-symbols-outlined">photo_camera</span></button>
+              <button class="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all"><span class="material-symbols-outlined">videocam</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-64 glass-card rounded-xl p-6 grid grid-cols-12 gap-5 items-center">
+          <div class="col-span-7 flex flex-col gap-4">
+            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
+            <div class="flex items-center gap-6">
+              <div class="relative w-40 h-40 rounded-full bg-surface-container-high shadow-inner flex items-center justify-center border border-white/5">
+                <div class="grid grid-cols-3 grid-rows-3 gap-2">
+                  <div class="col-start-2 flex justify-center"><button id="btn-forward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_up</span></button></div>
+                  <div class="row-start-2 flex justify-center"><button id="btn-left" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_left</span></button></div>
+                  <div class="row-start-2 col-start-2 flex justify-center items-center"><button id="btn-stop" class="w-8 h-8 bg-primary rounded-full shadow-[0_0_15px_rgba(253,216,53,0.4)]"></button></div>
+                  <div class="row-start-2 col-start-3 flex justify-center"><button id="btn-right" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_right</span></button></div>
+                  <div class="row-start-3 col-start-2 flex justify-center"><button id="btn-backward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_down</span></button></div>
+                </div>
+              </div>
+              <div class="space-y-4">
+                <div class="p-4 bg-surface-container-low rounded-lg border border-white/5 w-48">
+                  <div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>SPEED</span><span id="speed-pct">75%</span></div>
+                  <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full mt-1 accent-yellow-400" />
+                </div>
+                <div class="flex p-1 bg-surface-container rounded-full">
+                  <button id="btn-obstacle" class="px-5 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">自动避障</button>
+                  <button id="btn-follow" class="px-5 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">跟随模式</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-span-5 h-full pl-5 border-l border-white/10 flex flex-col justify-between">
+            <div class="flex items-start justify-between">
+              <div class="text-right">
+              <span class="text-[10px] text-slate-500 block uppercase mb-1">System Health</span>
+              <div class="flex gap-1"><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div></div>
+              </div>
+              <div id="gyro-status-pill" class="text-[10px] px-2 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
+                陀螺仪识别中
+              </div>
+            </div>
+            <div class="bg-secondary/10 p-4 rounded-xl border border-secondary/20 flex items-center justify-between gap-4">
+              <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+              <div>
+                <p class="text-xs font-bold text-secondary">星宝情绪</p>
+                <p id="emotion-txt" class="text-[10px] text-secondary/70">状态: 开心且好奇</p>
+                <p class="text-[10px] text-secondary/70">对话次数: <span id="dialog-turn-count">0</span></p>
+              </div>
+              <div class="text-right text-[10px] text-slate-400 leading-5">
+                <div>Pitch: <span id="pitch-mini" class="text-primary">0.0</span></div>
+                <div>Roll: <span id="roll-mini" class="text-primary">0.0</span></div>
+                <div>Yaw: <span id="yaw-mini" class="text-primary">0.0</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="col-span-3 flex flex-col gap-5 min-h-0">
+        <div class="flex-1 glass-card rounded-xl p-6 flex flex-col min-h-0">
+          <div class="flex justify-between items-center mb-4">
+            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">星宝日志</h4>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-primary bg-primary/10 px-2 py-1 rounded">实时更新</span>
+              <button id="btn-clear-memory" class="text-[10px] px-2 py-1 rounded bg-secondary/20 text-secondary hover:bg-secondary/30">清空日志</button>
+            </div>
+          </div>
+          <div id="event-log" class="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar"></div>
+        </div>
+
+        <div class="h-[19rem] glass-card rounded-xl p-6 flex flex-col gap-5">
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">运动能量</h4>
+              <span id="energy-bpm" class="text-[10px] text-secondary">Energy: --</span>
+            </div>
+            <div class="h-16 relative overflow-hidden">
+              <canvas id="energy-canvas" class="w-full h-full"></canvas>
+            </div>
+          </div>
+          <div class="flex-1 flex flex-col">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">3D 姿态感应</h4>
+            <div class="flex-1 flex items-center justify-center relative">
+              <div class="gyro-3d-wrap">
+                <div id="gyro-shell" class="gyro-3d-shell relative flex items-center justify-center">
+                  <div id="gyro-ring-x" class="gyro-ring gyro-ring-x"></div>
+                  <div id="gyro-ring-y" class="gyro-ring gyro-ring-y"></div>
+                  <div id="gyro-ring-z" class="gyro-ring gyro-ring-z"></div>
+                  <div class="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_12px_rgba(253,216,53,0.7)]"></div>
+                </div>
+              </div>
+              <div class="absolute right-0 space-y-2 text-[10px]">
+                <div class="flex justify-between gap-4"><span class="text-slate-500">PITCH</span><span id="pitch" class="text-primary">0.0°</span></div>
+                <div class="flex justify-between gap-4"><span class="text-slate-500">ROLL</span><span id="roll" class="text-primary">0.0°</span></div>
+                <div class="flex justify-between gap-4"><span class="text-slate-500">YAW</span><span id="yaw" class="text-primary">0.0°</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    const seenDialogSigs = new Set();
+    let currentAct = "stop";
+    let heartbeat = null;
+    let energyLevel = 0;
+    let energyPhase = 0;
+    let obstacleOn = false;
+    let followOn = false;
+    let lastImuSeenAt = 0;
+
+    function nowTime() { return new Date().toTimeString().slice(0, 8); }
+    function logRow(icon, text, time, colorCls) {
+      const wrap = document.createElement("div");
+      wrap.className = "flex gap-3";
+      wrap.innerHTML = '<div class="w-8 h-8 rounded-full bg-slate-700/40 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-sm ' + colorCls + '">' + icon + '</span></div><div class="text-xs"><p class="text-slate-300">' + text + '</p><p class="text-slate-500 mt-1">' + time + '</p></div>';
+      logEl.prepend(wrap);
+      while (logEl.children.length > 120) logEl.removeChild(logEl.lastChild);
+    }
+    function logSystem(msg) { logRow("info", msg, nowTime(), "text-tertiary"); }
+    function logUser(msg) { logRow("face", "你: " + msg, nowTime(), "text-secondary"); }
+    function logAi(msg) { logRow("smart_toy", "星宝: " + msg, nowTime(), "text-primary"); }
+
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => { if (currentAct !== "stop") sendMotor(currentAct); }, 150);
+    }
+    function stopMove() {
+      currentAct = "stop";
+      clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+    function bindHold(id, action) {
+      const el = $(id);
+      el.addEventListener("mousedown", () => startMove(action));
+      el.addEventListener("mouseup", stopMove);
+      el.addEventListener("mouseleave", stopMove);
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      el.addEventListener("touchend", stopMove);
+      el.addEventListener("touchcancel", stopMove);
+    }
+
+    function paintBackend(selected) {
+      const local = String(selected || "").toLowerCase().includes("local");
+      $("btn-backend-local").classList.toggle("bg-primary", local);
+      $("btn-backend-local").classList.toggle("text-[#5b4b00]", local);
+      $("btn-backend-local").classList.toggle("clay-btn", local);
+      $("btn-backend-local").classList.toggle("text-on-surface-variant", !local);
+      $("btn-backend-baidu").classList.toggle("bg-primary", !local);
+      $("btn-backend-baidu").classList.toggle("text-[#5b4b00]", !local);
+      $("btn-backend-baidu").classList.toggle("clay-btn", !local);
+      $("btn-backend-baidu").classList.toggle("text-on-surface-variant", local);
+    }
+    function paintMute(on) {
+      const label = $("btn-mute").querySelector("span:last-child");
+      const icon = $("btn-mute").querySelector("span:first-child");
+      label.textContent = "静音: " + (on ? "ON" : "OFF");
+      icon.textContent = on ? "volume_up" : "volume_off";
+    }
+    function paintFeatureButton(id, on) {
+      const el = $(id);
+      el.classList.toggle("bg-primary", on);
+      el.classList.toggle("text-[#5b4b00]", on);
+      el.classList.toggle("clay-btn", on);
+      el.classList.toggle("text-on-surface-variant", !on);
+    }
+    function pickFaceIdentity(face) {
+      if (!face) return "未识别";
+      if (typeof face === "string") return face || "未识别";
+      const keys = ["name", "person", "label", "id", "person_name", "target"];
+      for (const k of keys) {
+        if (face[k] != null && String(face[k]).trim()) return String(face[k]);
+      }
+      return "未识别";
+    }
+    function pickEmotion(status) {
+      if (status && status.face && status.face.emotion) return String(status.face.emotion);
+      if (status && status.face_emotion) return String(status.face_emotion);
+      if (status && status.emotion) return String(status.emotion);
+      return "中性";
+    }
+    function renderDialogEvents(items) {
+      const start = Math.max(0, items.length - 6);
+      for (let i = start; i < items.length; i++) {
+        const it = items[i] || {};
+        const u = String(it.user || "");
+        const a = String(it.assistant || "");
+        const sig = u + "||" + a;
+        if (!sig || seenDialogSigs.has(sig)) continue;
+        seenDialogSigs.add(sig);
+        if (u) logUser(u);
+        if (a) logAi(a);
+      }
+      if (seenDialogSigs.size > 1500) seenDialogSigs.clear();
+    }
+    function applyStatus(d) {
+      $("face-status").textContent = "人脸识别: " + (d.face ? "已激活" : "无目标");
+      $("face-person").textContent = pickFaceIdentity(d.face);
+      paintBackend(d.backend_selected || "local");
+      paintMute(!!d.muted);
+      if (typeof d.auto_obstacle_enabled === "boolean") obstacleOn = d.auto_obstacle_enabled;
+      if (typeof d.follow_mode_enabled === "boolean") followOn = d.follow_mode_enabled;
+      paintFeatureButton("btn-obstacle", obstacleOn);
+      paintFeatureButton("btn-follow", followOn);
+      $("dialog-turn-count").textContent = String(d.dialog_turn_count ?? 0);
+      $("emotion-txt").textContent = "状态: " + pickEmotion(d);
+      if (d.esp32) {
+        $("ax-mini").textContent = d.esp32.ax != null ? Number(d.esp32.ax).toFixed(1) : "0.0";
+        $("ay-mini").textContent = d.esp32.ay != null ? Number(d.esp32.ay).toFixed(1) : "0.0";
+        $("pitch").textContent = d.esp32.gx != null ? Number(d.esp32.gx).toFixed(1) + "°" : "0.0°";
+        $("roll").textContent = d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) + "°" : "0.0°";
+        $("yaw").textContent = d.esp32.gz != null ? Number(d.esp32.gz).toFixed(1) + "°" : "0.0°";
+        const gx = Number(d.esp32.gx || 0);
+        const gy = Number(d.esp32.gy || 0);
+        const gz = Number(d.esp32.gz || 0);
+        $("pitch-mini").textContent = gx.toFixed(1);
+        $("roll-mini").textContent = gy.toFixed(1);
+        $("yaw-mini").textContent = gz.toFixed(1);
+        const tiltX = Math.max(-25, Math.min(25, gy));
+        const tiltY = Math.max(-25, Math.min(25, -gx));
+        $("gyro-shell").style.transform = "rotateX(" + tiltY + "deg) rotateY(" + tiltX + "deg)";
+        $("gyro-ring-x").style.transform = "rotateX(" + (75 + gx * 0.9) + "deg)";
+        $("gyro-ring-y").style.transform = "rotateY(" + (75 + gy * 0.9) + "deg)";
+        $("gyro-ring-z").style.transform = "rotate(" + (gz * 1.2) + "deg)";
+        energyLevel = Number(d.esp32.radar_energy || 0);
+        $("energy-bpm").textContent = "Energy: " + energyLevel.toFixed(1);
+        lastImuSeenAt = Date.now();
+      }
+      if (Array.isArray(d.dialog_events)) renderDialogEvents(d.dialog_events);
+      if (d.fps != null) $("cam-badge").textContent = "LIVE FEED • " + d.fps + " FPS";
+    }
+
+    async function setBackend(mode) {
+      try {
+        const res = await fetch("/api/v1/backend?mode=" + encodeURIComponent(mode));
+        const j = await res.json();
+        if (j.backend_selected) paintBackend(j.backend_selected);
+        logSystem("后端切换: " + mode);
+      } catch (_) {}
+    }
+    async function toggleMute() { try { await fetch("/api/v1/mute?mode=toggle"); } catch (_) {} }
+    function toggleObstacle() {
+      fetch("/api/v1/control/mode?name=obstacle&value=toggle")
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && typeof j.auto_obstacle_enabled === "boolean") obstacleOn = j.auto_obstacle_enabled;
+          if (j && typeof j.follow_mode_enabled === "boolean") followOn = j.follow_mode_enabled;
+          paintFeatureButton("btn-obstacle", obstacleOn);
+          paintFeatureButton("btn-follow", followOn);
+          logSystem("自动避障: " + (obstacleOn ? "开启" : "关闭"));
+        })
+        .catch(() => logSystem("自动避障切换失败"));
+    }
+    function toggleFollow() {
+      fetch("/api/v1/control/mode?name=follow&value=toggle")
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && typeof j.auto_obstacle_enabled === "boolean") obstacleOn = j.auto_obstacle_enabled;
+          if (j && typeof j.follow_mode_enabled === "boolean") followOn = j.follow_mode_enabled;
+          paintFeatureButton("btn-obstacle", obstacleOn);
+          paintFeatureButton("btn-follow", followOn);
+          logSystem("跟随模式: " + (followOn ? "开启" : "关闭"));
+        })
+        .catch(() => logSystem("跟随模式切换失败"));
+    }
+    async function clearMemory() {
+      try {
+        const res = await fetch("/api/v1/memory/clear", { method: "POST" });
+        const j = await res.json();
+        if (j && j.ok) {
+          seenDialogSigs.clear();
+          logEl.innerHTML = "";
+          logSystem("日志与记忆已清空");
+          $("dialog-turn-count").textContent = "0";
+        } else { logSystem("清空失败"); }
+      } catch (_) { logSystem("清空失败"); }
+    }
+    function connectSSE() {
+      const es = new EventSource("/api/v1/status/stream");
+      es.onopen = () => logSystem("状态流已连接");
+      es.onmessage = (e) => { try { applyStatus(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = () => {};
+    }
+    async function pollState() {
+      try {
+        const res = await fetch("/api/v1/app/state");
+        const j = await res.json();
+        if (j && j.status) applyStatus(j.status);
+      } catch (_) {}
+    }
+    function startWave() {
+      const canvas = $("energy-canvas");
+      const ctx = canvas.getContext("2d");
+      const points = [];
+      function resize() {
+        const r = canvas.getBoundingClientRect();
+        canvas.width = Math.max(50, Math.floor(r.width));
+        canvas.height = Math.max(50, Math.floor(r.height));
+        points.length = 0;
+      }
+      resize();
+      window.addEventListener("resize", resize);
+      function draw() {
+        const w = canvas.width, h = canvas.height, mid = h * 0.5;
+        const level = Math.max(0, Math.min(300, energyLevel));
+        const amp = 5 + (level / 300) * 20;
+        energyPhase += 0.08 + (level / 300) * 0.08;
+        const y = mid - (Math.sin(energyPhase) * 0.75 + Math.sin(energyPhase * 1.7) * 0.25) * amp;
+        points.push(y);
+        while (points.length > w) points.shift();
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = "rgba(239,177,249,0.26)";
+        ctx.lineWidth = 1;
+        for (let gy = 8; gy < h; gy += 14) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+        ctx.strokeStyle = "#efb1f9";
+        ctx.lineWidth = 2.8;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(239,177,249,0.65)";
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const x = w - points.length + i;
+          if (i === 0) ctx.moveTo(x, points[i]); else ctx.lineTo(x, points[i]);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        requestAnimationFrame(draw);
+      }
+      draw();
+    }
+    function updateGyroStatus() {
+      const online = (Date.now() - lastImuSeenAt) < 2600;
+      const pill = $("gyro-status-pill");
+      if (online) {
+        pill.textContent = "陀螺仪识别中";
+        pill.className = "text-[10px] px-2 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30";
+      } else {
+        pill.textContent = "陀螺仪离线";
+        pill.className = "text-[10px] px-2 py-1 rounded-full bg-slate-500/20 text-slate-300 border border-slate-400/30";
+      }
+    }
+
+    bindHold("btn-forward", "forward");
+    bindHold("btn-backward", "backward");
+    bindHold("btn-left", "left");
+    bindHold("btn-right", "right");
+    $("btn-stop").addEventListener("click", stopMove);
+    $("btn-stop-all").addEventListener("click", stopMove);
+    $("btn-backend-local").addEventListener("click", () => setBackend("local"));
+    $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
+    $("btn-mute").addEventListener("click", toggleMute);
+    $("btn-clear-memory").addEventListener("click", clearMemory);
+    $("btn-obstacle").addEventListener("click", toggleObstacle);
+    $("btn-follow").addEventListener("click", toggleFollow);
+    paintFeatureButton("btn-obstacle", obstacleOn);
+    paintFeatureButton("btn-follow", followOn);
+
+    $("speed-range").addEventListener("input", (e) => {
+      const val = Math.max(0, Math.min(100, Number(e.target.value || 0)));
+      $("speed-pct").textContent = val + "%";
+    });
+    $("speed-range").addEventListener("change", (e) => {
+      const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value || 0) * 2.55)));
+      sendMotor("speed:" + v);
+      logSystem("速度调整: " + v);
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      if (e.key === "w") startMove("forward");
+      if (e.key === "s") startMove("backward");
+      if (e.key === "a") startMove("left");
+      if (e.key === "d") startMove("right");
+      if (e.key === " ") stopMove();
+    });
+    window.addEventListener("keyup", (e) => { if (["w","a","s","d"," "].includes(e.key)) stopMove(); });
+
+    connectSSE();
+    pollState();
+    setInterval(pollState, 1400);
+    setInterval(updateGyroStatus, 600);
+    startWave();
+    logSystem("控制台已加载");
+  </script>
+</body>
+</html>

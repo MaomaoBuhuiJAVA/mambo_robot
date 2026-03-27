@@ -183,6 +183,7 @@ GET /api/v1/app/state
   "status": {
     "fps": 24,
     "state": "listening",
+    "dialog_turn_count": 18,
     "backend_selected": "local",
     "backend_effective": "local",
     "muted": false,
@@ -219,6 +220,7 @@ GET /api/v1/status
 ```
 
 返回与 `/status` SSE 中单条 `data` 相同的 JSON。
+其中 `dialog_turn_count` 表示累计对话轮次（每次“用户一句 + 星宝一句”记为 1）。
 
 #### 1.3 状态流（SSE）
 
@@ -341,6 +343,7 @@ POST /api/v1/memory/clear
 - 清空内存中的对话记忆与落盘文件 `./data/dialog_memory.jsonl`
 - 清除后，新的对话会从空记忆重新累计
 - 典型返回：`{"ok":true,"message":"memory_cleared"}`
+- Web 控制台中，“清空日志/记忆”按钮位于右侧“星宝日志”卡片头部
 
 ---
 

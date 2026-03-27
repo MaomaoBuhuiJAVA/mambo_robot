@@ -660,6 +660,7 @@ public:
     }
     void SetCurrentEmotion(const std::string& e) { std::lock_guard<std::mutex> lk(mtx_); current_emotion_ = e; }
     int GetMicRms() const { return mic_rms_.load(); }
+    int GetDialogTurnCount() const { return dialog_turn_count_.load(); }
     std::string GetRecentDialogEventsJson() const {
         std::lock_guard<std::mutex> lk(memory_mtx_);
         json arr = json::array();
@@ -681,6 +682,7 @@ public:
                 chat_history_.push_back(system_prompt);
             }
         }
+        dialog_turn_count_.store(0);
         bool ok = (std::remove(memory_file_.c_str()) == 0);
         if (!ok) {
             std::ofstream ofs(memory_file_, std::ios::trunc);
@@ -706,6 +708,7 @@ private:
     std::mutex mtx_;
     std::string current_emotion_ = "ZhongXing";
     std::atomic<int> mic_rms_{0};
+    std::atomic<int> dialog_turn_count_{0};
     mutable std::mutex memory_mtx_;
     std::deque<std::pair<std::string, std::string>> recent_dialogs_;
     const std::string memory_file_ = "./data/dialog_memory.jsonl";
@@ -717,6 +720,7 @@ private:
 
     void AppendConversationMemory(const std::string& user, const std::string& assistant) {
         if (user.empty() && assistant.empty()) return;
+        dialog_turn_count_.fetch_add(1);
         {
             std::lock_guard<std::mutex> lk(memory_mtx_);
             recent_dialogs_.push_back({user, assistant});
@@ -748,6 +752,7 @@ private:
             } catch (...) {}
         }
         if (loaded.empty()) return;
+        dialog_turn_count_.store((int)loaded.size());
 
         size_t start = loaded.size() > 10 ? loaded.size() - 10 : 0;
         {

@@ -13,6 +13,8 @@
 #include <iostream>
 #include <cstdio>
 #include <csignal>
+#include <cmath>
+#include <cctype>
 #include <unistd.h>
 #include <sys/select.h>
 
@@ -27,6 +29,8 @@ int main() {
     mambo::SerialManager serial(mambo::AppConfig::kSerialPort);
     mambo::WebServer web;
     web.Start(&serial);
+    std::atomic<bool> auto_obstacle_enabled{false};
+    std::atomic<bool> follow_mode_enabled{false};
 
     mambo::VisionEngine vision;
     mambo::DialogSystem dialog(&serial, &web);
@@ -34,6 +38,28 @@ int main() {
     web.SetMuteCommandHandler([&dialog](const std::string& cmd) { dialog.HandleConsoleCommand(cmd); });
     web.SetDiagBaiduDeepseekHandler([&dialog]() { return dialog.RunBaiduDeepseekDiagJson(); });
     web.SetClearMemoryHandler([&dialog]() { return dialog.ClearConversationMemoryJson(); });
+    web.SetMotionModeHandler([&](const std::string& name, const std::string& value) -> std::string {
+        auto to_lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+            return s;
+        };
+        const std::string n = to_lower(name);
+        const std::string v = to_lower(value);
+        auto apply_value = [&](std::atomic<bool>& flag) {
+            if (v == "toggle") { flag.store(!flag.load()); return; }
+            if (v == "1" || v == "true" || v == "on" || v == "enable" || v == "enabled") { flag.store(true); return; }
+            if (v == "0" || v == "false" || v == "off" || v == "disable" || v == "disabled") { flag.store(false); return; }
+        };
+        if (n == "obstacle") apply_value(auto_obstacle_enabled);
+        else if (n == "follow") apply_value(follow_mode_enabled);
+        std::ostringstream oss;
+        oss << "{"
+            << "\"ok\":true,"
+            << "\"auto_obstacle_enabled\":" << (auto_obstacle_enabled.load() ? "true" : "false") << ","
+            << "\"follow_mode_enabled\":" << (follow_mode_enabled.load() ? "true" : "false")
+            << "}";
+        return oss.str();
+    });
     dialog.Start();
     std::cerr << "[Console] 输入 `1`(local) / `2`(baidu) / `toggle` 一键切换 ASR+LLM+TTS 后端；输入 `backend ?` 查看当前。\n";
 
@@ -115,7 +141,13 @@ int main() {
             {
                 std::lock_guard<std::mutex> lk(data_mtx);
                 has_face       = !boxes.empty();
-                fast_box       = has_face ? boxes[0] : cv::Rect();
+                if (has_face) {
+                    auto best = std::max_element(boxes.begin(), boxes.end(),
+                        [](const cv::Rect& a, const cv::Rect& b) { return a.area() < b.area(); });
+                    fast_box = (best != boxes.end()) ? *best : boxes[0];
+                } else {
+                    fast_box = cv::Rect();
+                }
                 latest_frame_w = fw;
                 latest_frame_h = fh;
             }
@@ -159,6 +191,8 @@ int main() {
     // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
     auto last_fall_alert = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    auto last_auto_drive = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    std::string auto_drive_last_cmd = "stop";
 
     while (!g_shutdown) {
         cv::Rect box; bool hf; int fw, fh;
@@ -193,6 +227,47 @@ int main() {
 
         // 轮询串口接收 ESP32 上报
         serial.Poll();
+        auto esp = serial.GetEsp32Data();
+
+        // 自动避障 + 跟随控制（优先避障）
+        const auto now_ctrl = std::chrono::steady_clock::now();
+        const long ctrl_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_ctrl - last_auto_drive).count();
+        if (ctrl_ms >= 180) {
+            const bool auto_modes_on = auto_obstacle_enabled.load() || follow_mode_enabled.load();
+            std::string auto_cmd = "stop";
+            bool decided = false;
+            if (auto_modes_on && auto_obstacle_enabled.load() && esp.valid && esp.radar_dist > 0 && esp.radar_dist < 35) {
+                auto_cmd = "stop";
+                decided = true;
+            }
+            if (auto_modes_on && !decided && follow_mode_enabled.load() && hf && fw > 0 && fh > 0 && box.width > 0 && box.height > 0) {
+                const float cx = box.x + box.width * 0.5f;
+                const float nx = (cx - fw * 0.5f) / std::max(1.0f, fw * 0.5f);
+                const float area_ratio = (float)(box.width * box.height) / std::max(1.0f, (float)(fw * fh));
+                if (std::fabs(nx) > 0.20f) {
+                    auto_cmd = (nx > 0.f) ? "right" : "left";
+                } else if (area_ratio < 0.06f) {
+                    auto_cmd = "forward";
+                } else if (area_ratio > 0.20f) {
+                    auto_cmd = "backward";
+                } else {
+                    auto_cmd = "stop";
+                }
+                decided = true;
+            }
+            if (auto_modes_on) {
+                if (auto_cmd != auto_drive_last_cmd) {
+                    serial.SendCommand(auto_cmd);
+                    auto_drive_last_cmd = auto_cmd;
+                } else if (decided && auto_cmd != "stop") {
+                    serial.SendCommand(auto_cmd); // 心跳续命，避免 ESP32 超时自动停
+                }
+            } else if (auto_drive_last_cmd != "stop") {
+                serial.SendCommand("stop");
+                auto_drive_last_cmd = "stop";
+            }
+            last_auto_drive = now_ctrl;
+        }
 
         // 消费警报，触发语音
         std::string alert = serial.ConsumeAlert();
@@ -234,6 +309,9 @@ int main() {
             json += ",\"backend_effective_llm_url\":\"" + std::string(dialog.GetEffectiveLlmUrl()) + "\"";
             json += ",\"backend_effective_tts_url\":\"" + std::string(dialog.GetEffectiveTtsUrl()) + "\"";
             json += ",\"muted\":" + std::string(dialog.IsMuted() ? "true" : "false");
+            json += ",\"auto_obstacle_enabled\":" + std::string(auto_obstacle_enabled.load() ? "true" : "false");
+            json += ",\"follow_mode_enabled\":" + std::string(follow_mode_enabled.load() ? "true" : "false");
+            json += ",\"dialog_turn_count\":" + std::to_string(dialog.GetDialogTurnCount());
             if (!faces.empty()) {
                 char buf[128];
                 snprintf(buf, sizeof(buf), ",\"face\":{\"name\":\"%s\",\"emotion\":\"%s\",\"score\":%.2f}",
@@ -276,7 +354,6 @@ int main() {
             }
 
             // 控制台打印 ── ESP32
-            auto esp = serial.GetEsp32Data();
             if (esp.valid) {
                 std::cout << std::fixed << std::setprecision(2);
                 std::cout << "\n└─ ESP32  "
