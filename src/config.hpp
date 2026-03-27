@@ -35,10 +35,16 @@ struct AppConfig {
     static constexpr int kStreamWidth      = 480; // 流编码宽度（检测仍用原始分辨率）
     static constexpr int kStreamHeight     = 270; // 流编码高度
 
-    static constexpr int kVoiceThreshold   = 100;  // 正常说话触发阈值
-    static constexpr int kSilenceThreshold = 80;   // 低于此值视为静音
-    static constexpr int kSilenceLimitMs   = 1000;
-    static constexpr int kInputSize        = 640;
+    // ===== 音频采集判定参数（见 src/dialog_system.hpp: AudioLoop）=====
+    // 麦克风输入用 mean(|sample|) 近似“音量/RMS”（16kHz, S16_LE, 单声道）。
+    // 1) 超过 kVoiceThreshold：开始录音；2) 连续低于 kSilenceThreshold 达到 kSilenceLimitMs：结束录音。
+    // 另外：机器人正在说话(speaking)时，为避免扬声器回声误触发“打断”，会用 kVoiceThreshold * 4 作为打断阈值。
+    static constexpr int kVoiceThreshold   = 300;   // 开始录音/可打断的触发阈值（越大越不敏感）
+    static constexpr int kSilenceThreshold = 200;   // 静音判定阈值（低于此值视为“安静”）
+    static constexpr int kSilenceLimitMs   = 1000;  // 静音持续超过该毫秒数 → 判定一句话结束
+
+    // ===== 视觉模型参数 =====
+    static constexpr int kInputSize        = 640;   // 检测模型输入尺寸（例如 YOLO 640x640）
 
     /** 本地 NLU 地址（与 dialog 中 kBackendLocalModels 的 host 一致，用于 DNS 兜底/覆盖） */
     static constexpr const char* kLocalBackendHostname = "124.222.205.168";

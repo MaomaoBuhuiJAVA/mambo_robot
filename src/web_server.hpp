@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -26,6 +27,7 @@ class WebServer {
     std::function<std::string(const std::string&)> backend_http_;
     std::function<void(const std::string&)> mute_cmd_;
     std::function<std::string()> diag_baidu_deepseek_;
+    std::function<std::string()> clear_memory_;
 
     std::mutex eye_mtx_;
     std::condition_variable eye_cv_;
@@ -55,10 +57,38 @@ class WebServer {
         return std::string(std::istreambuf_iterator<char>(f), {});
     }
 
+    // 轻量 JSON 字段提取（仅用于简单 body 解析，避免额外依赖）
+    static std::string ExtractJsonStringField(const std::string& body, const std::string& key) {
+        size_t p = body.find("\"" + key + "\"");
+        if (p == std::string::npos) return "";
+        p = body.find(':', p);
+        if (p == std::string::npos) return "";
+        p = body.find('"', p);
+        if (p == std::string::npos) return "";
+        ++p;
+        size_t q = body.find('"', p);
+        if (q == std::string::npos) return "";
+        return body.substr(p, q - p);
+    }
+
+    static int ExtractJsonIntField(const std::string& body, const std::string& key, int def) {
+        size_t p = body.find("\"" + key + "\"");
+        if (p == std::string::npos) return def;
+        p = body.find(':', p);
+        if (p == std::string::npos) return def;
+        ++p;
+        while (p < body.size() && (body[p] == ' ' || body[p] == '\t')) ++p;
+        size_t end = p;
+        while (end < body.size() && (body[end] == '-' || (body[end] >= '0' && body[end] <= '9'))) ++end;
+        if (end == p) return def;
+        return std::atoi(body.substr(p, end - p).c_str());
+    }
+
 public:
     void SetBackendHttpHandler(std::function<std::string(const std::string&)> cb) { backend_http_ = std::move(cb); }
     void SetMuteCommandHandler(std::function<void(const std::string&)> cb) { mute_cmd_ = std::move(cb); }
     void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
+    void SetClearMemoryHandler(std::function<std::string()> cb) { clear_memory_ = std::move(cb); }
     void PushEyeData(float nx, float ny, const std::string& emotion) {
         { std::lock_guard<std::mutex> lk(eye_mtx_);
           eye_emotion_ = emotion;
@@ -133,6 +163,42 @@ public:
                     return running_.load();
                 });
         });
+        // App 统一命名：状态流 SSE
+        svr.Get("/api/v1/status/stream", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            res.set_chunked_content_provider("text/event-stream",
+                [this](size_t, httplib::DataSink& sink) {
+                    std::string data;
+                    { std::lock_guard<std::mutex> lk(status_mtx_); data = status_data_; }
+                    std::string msg = "data: " + data + "\n\n";
+                    if (!sink.write(msg.c_str(), msg.size())) return false;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    return running_.load();
+                });
+        });
+        // App 统一命名：眼睛状态流 SSE
+        svr.Get("/api/v1/eyes/stream", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            uint64_t last_seq = 0;
+            res.set_chunked_content_provider("text/event-stream",
+                [this, last_seq](size_t, httplib::DataSink& sink) mutable {
+                    std::string data;
+                    { std::unique_lock<std::mutex> lk(eye_mtx_);
+                      eye_cv_.wait_for(lk, std::chrono::milliseconds(100),
+                          [this, &last_seq]() { return !running_ || eye_seq_ != last_seq; });
+                      if (!running_) return false;
+                      data = eye_data_; last_seq = eye_seq_; }
+                    std::string msg = "data: " + data + "\n\n";
+                    return sink.write(msg.c_str(), msg.size());
+                });
+        });
+        // App 统一命名：状态快照
+        svr.Get("/api/v1/status", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            std::string data;
+            { std::lock_guard<std::mutex> lk(status_mtx_); data = status_data_.empty() ? "{}" : status_data_; }
+            res.set_content(data, "application/json");
+        });
 
         // MJPEG 流（共用 handler）
         auto mjpeg_handler = [this](size_t, httplib::DataSink& sink) {
@@ -204,6 +270,107 @@ public:
             handle_cmd(act, res);
         });
 
+        // App 电机控制接口（支持边看视频边发控制）
+        // GET  : /api/v1/control/motor?action=forward
+        // POST : {"action":"forward","duration_ms":300}
+        auto motor_control = [serial](const std::string& action, int duration_ms, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!serial) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"serial_not_ready\"}", "application/json");
+                return;
+            }
+            if (action.empty()) {
+                res.status = 400;
+                res.set_content("{\"ok\":false,\"error\":\"empty_action\"}", "application/json");
+                return;
+            }
+            serial->SendCommand(action);
+            if (duration_ms > 0) {
+                std::thread([serial, duration_ms]() {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+                    serial->SendCommand("stop");
+                }).detach();
+            }
+            std::ostringstream oss;
+            oss << "{\"ok\":true,\"action\":\"" << action << "\",\"duration_ms\":" << duration_ms << "}";
+            res.set_content(oss.str(), "application/json");
+        };
+        svr.Get("/api/v1/control/motor", [motor_control](const httplib::Request& req, httplib::Response& res) {
+            const std::string action = req.has_param("action")
+                ? req.get_param_value("action")
+                : (req.has_param("act") ? req.get_param_value("act") : "");
+            int duration_ms = 0;
+            if (req.has_param("duration_ms")) {
+                duration_ms = std::max(0, std::atoi(req.get_param_value("duration_ms").c_str()));
+            }
+            motor_control(action, duration_ms, res);
+        });
+        svr.Post("/api/v1/control/motor", [motor_control](const httplib::Request& req, httplib::Response& res) {
+            std::string action = ExtractJsonStringField(req.body, "action");
+            if (action.empty()) action = ExtractJsonStringField(req.body, "act");
+            int duration_ms = std::max(0, ExtractJsonIntField(req.body, "duration_ms", 0));
+            motor_control(action, duration_ms, res);
+        });
+        // App 兼容：通用控制接口（与旧 /cmd 对齐）
+        svr.Get("/api/v1/control/cmd", [handle_cmd](const httplib::Request& req, httplib::Response& res) {
+            handle_cmd(req.has_param("act") ? req.get_param_value("act") : "", res);
+        });
+        svr.Post("/api/v1/control/cmd", [handle_cmd](const httplib::Request& req, httplib::Response& res) {
+            std::string act = ExtractJsonStringField(req.body, "act");
+            if (act.empty()) act = ExtractJsonStringField(req.body, "action");
+            handle_cmd(act, res);
+        });
+
+        // App 全量状态接口：一次返回状态 + 情绪/识别 + ESP32 + 眼睛 + 视频元信息
+        svr.Get("/api/v1/app/state", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            std::string status_json = "{}";
+            std::string eye_json = "{\"x\":0,\"y\":0,\"emotion\":\"neutral\"}";
+            {
+                std::lock_guard<std::mutex> lk(status_mtx_);
+                status_json = status_data_.empty() ? "{}" : status_data_;
+            }
+            {
+                std::lock_guard<std::mutex> lk(eye_mtx_);
+                eye_json = eye_data_.empty() ? "{\"x\":0,\"y\":0,\"emotion\":\"neutral\"}" : eye_data_;
+            }
+
+            int w = 0, h = 0;
+            long long ts = 0;
+            {
+                std::lock_guard<std::mutex> lk(video_raw_mtx_);
+                w = latest_frame_width_;
+                h = latest_frame_height_;
+                ts = latest_frame_ts_ms_;
+            }
+            uint64_t frame_id = 0;
+            bool ready = false;
+            {
+                std::lock_guard<std::mutex> lk(video_jpeg_mtx_);
+                ready = latest_jpeg_ && !latest_jpeg_->empty();
+                frame_id = latest_jpeg_seq_;
+            }
+
+            std::ostringstream oss;
+            oss << "{"
+                << "\"ok\":true,"
+                << "\"status\":" << status_json << ","
+                << "\"eye\":" << eye_json << ","
+                << "\"video\":{"
+                << "\"ready\":" << (ready ? "true" : "false")
+                << ",\"width\":" << w
+                << ",\"height\":" << h
+                << ",\"capture_fps\":" << AppConfig::kCameraTargetFps
+                << ",\"stream_fps\":" << AppConfig::kVideoStreamFps
+                << ",\"jpeg_quality\":" << AppConfig::kVideoJpegQuality
+                << ",\"frame_id\":" << frame_id
+                << ",\"timestamp_ms\":" << ts
+                << "}"
+                << "}";
+            res.set_content(oss.str(), "application/json");
+        });
+
         auto handle_backend = [this](const std::string& mode) -> std::string {
             if (!backend_http_) return "{\"ok\":false,\"error\":\"no_handler\"}";
             return backend_http_(mode);
@@ -234,6 +401,19 @@ public:
             }
             res.set_content(handle_backend(mode), "application/json");
         });
+        // App 统一命名：后端查询/切换
+        svr.Get("/api/v1/backend", [this, handle_backend](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!backend_http_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "";
+            res.set_content(handle_backend(mode), "application/json");
+        });
+        svr.Post("/api/v1/backend", [this, handle_backend](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!backend_http_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            std::string mode = ExtractJsonStringField(req.body, "mode");
+            res.set_content(handle_backend(mode), "application/json");
+        });
 
         svr.Get("/mute", [this](const httplib::Request& req, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
@@ -244,11 +424,46 @@ public:
             else if (mode == "toggle" || mode == "t") mute_cmd_("mute");
             res.set_content("{\"ok\":true}", "application/json");
         });
+        // App 统一命名：静音控制
+        svr.Get("/api/v1/mute", [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!mute_cmd_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
+            std::string mode = req.has_param("mode") ? req.get_param_value("mode") : "";
+            if (mode == "on" || mode == "1" || mode == "true") mute_cmd_("mute on");
+            else if (mode == "off" || mode == "0" || mode == "false") mute_cmd_("mute off");
+            else if (mode == "toggle" || mode == "t") mute_cmd_("mute");
+            res.set_content("{\"ok\":true}", "application/json");
+        });
+        svr.Post("/api/v1/mute", [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!mute_cmd_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
+            std::string mode = ExtractJsonStringField(req.body, "mode");
+            if (mode == "on" || mode == "1" || mode == "true") mute_cmd_("mute on");
+            else if (mode == "off" || mode == "0" || mode == "false") mute_cmd_("mute off");
+            else if (mode == "toggle" || mode == "t") mute_cmd_("mute");
+            res.set_content("{\"ok\":true}", "application/json");
+        });
 
         svr.Get("/diag/baidu_deepseek", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
             if (!diag_baidu_deepseek_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
             res.set_content(diag_baidu_deepseek_(), "application/json");
+        });
+        svr.Get("/api/v1/diag/baidu_deepseek", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!diag_baidu_deepseek_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
+            res.set_content(diag_baidu_deepseek_(), "application/json");
+        });
+        // 对话记忆清除
+        svr.Get("/api/v1/memory/clear", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!clear_memory_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            res.set_content(clear_memory_(), "application/json");
+        });
+        svr.Post("/api/v1/memory/clear", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!clear_memory_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            res.set_content(clear_memory_(), "application/json");
         });
 
         // 简易控制页
@@ -268,10 +483,11 @@ public:
         });
 
         // ── 超级控制台 /dashboard ─────────────────────────────────
-        // 从 src/dashboard.html 读取（运行时路径为 ./src/dashboard.html）
+        // 从 src/dashboard_v2.html 读取（运行时路径为 ./src/dashboard_v2.html）
         svr.Get("/dashboard", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
-            std::string html = ReadFile("./src/dashboard.html");
+            std::string html = ReadFile("./src/dashboard_v2.html");
+            if (html.empty()) html = ReadFile("./src/dashboard.html"); // 兼容旧文件
             if (html.empty()) {
                 res.status = 503;
                 res.set_content("dashboard.html not found", "text/plain");

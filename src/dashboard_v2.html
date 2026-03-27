@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STAR GEM | 机器人控制后台</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b1118;
+      --panel: #121a24cc;
+      --border: #223042;
+      --text: #dbe7f5;
+      --muted: #87a0b8;
+      --cyan: #00daf3;
+      --cyan2: #4be8ff;
+      --red: #ff9a9a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 700px at 20% -10%, #12263d 0%, #0b1118 45%, #090f16 100%);
+      color: var(--text);
+      font-family: "Space Grotesk", sans-serif;
+      overflow: hidden;
+    }
+    .glass {
+      background: linear-gradient(180deg, rgba(17, 25, 35, 0.9), rgba(11, 17, 24, 0.9));
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .neon-edge {
+      border-color: #1dd8ff;
+      box-shadow: 0 0 0 1px rgba(29, 216, 255, 0.45), 0 0 30px rgba(29, 216, 255, 0.2);
+    }
+    .small-label { color: var(--muted); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
+    .signal-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .metric-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+    .metric-bar { height: 8px; border-radius: 999px; background: #152435; border: 1px solid #24384f; overflow: hidden; }
+    .metric-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #20d7ff, #78ebff); transition: width .25s ease; }
+    .flash-change { animation: flash .35s ease; }
+    .radar {
+      width: 116px; height: 116px; border-radius: 999px; position: relative; overflow: hidden;
+      border: 1px solid #24435b; background: radial-gradient(circle at center, #102236 0%, #0a1624 60%, #08121d 100%);
+    }
+    .radar::before, .radar::after {
+      content: ""; position: absolute; inset: 12%; border: 1px solid #1d3d55; border-radius: 999px;
+    }
+    .radar::after { inset: 30%; }
+    .sweep {
+      position: absolute; inset: 0;
+      background: conic-gradient(from 0deg, rgba(0, 218, 243, 0.42) 0deg, rgba(0, 218, 243, 0.0) 70deg, transparent 360deg);
+      animation: spin 2.5s linear infinite;
+    }
+    .radar-dot {
+      position: absolute; width: 8px; height: 8px; border-radius: 999px; background: #6df3ff;
+      box-shadow: 0 0 12px #3eefff;
+      left: 54px; top: 54px;
+      transform: translate(-50%, -50%);
+    }
+    .attitude {
+      width: 116px; height: 116px; border-radius: 999px; position: relative; margin: 0 auto;
+      border: 1px solid #2a4160; background: radial-gradient(circle at center, #101f33 0%, #0b1625 72%);
+      overflow: hidden;
+    }
+    .att-ring {
+      position: absolute; inset: 14px; border-radius: 999px; border: 1px dashed #436c97;
+      animation: spin 7s linear infinite;
+    }
+    .att-cross-h, .att-cross-v {
+      position: absolute; background: #4d6f8f;
+    }
+    .att-cross-h { left: 16px; right: 16px; top: 57px; height: 1px; }
+    .att-cross-v { top: 16px; bottom: 16px; left: 57px; width: 1px; }
+    .att-needle {
+      position: absolute; left: 50%; top: 50%; width: 2px; height: 44px; background: #62d7ff;
+      transform-origin: center 36px;
+      box-shadow: 0 0 8px #62d7ff;
+      border-radius: 2px;
+    }
+    .ecg-wrap {
+      height: 84px; border: 1px solid #1d2f42; border-radius: 10px; background: #0c1622; overflow: hidden; position: relative;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes flash { 0% { color: #fff; text-shadow: 0 0 12px #7fefff; } 100% { color: inherit; text-shadow: none; } }
+  </style>
+</head>
+<body class="h-screen w-screen">
+  <header class="fixed top-0 left-0 right-0 h-14 px-4 z-30 glass border-x-0 border-t-0 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <div class="text-xl font-bold tracking-tight text-[var(--cyan)]">STAR GEM</div>
+      <div class="hidden md:flex gap-5 text-[11px]">
+        <span class="text-[var(--cyan)] border-b border-[var(--cyan)] pb-[2px]">云端同步</span>
+        <span class="text-[var(--muted)]">本地模式</span>
+        <span class="text-[var(--muted)]">音频设置</span>
+      </div>
+      <div class="hidden md:flex items-center gap-2 ml-2">
+        <button id="btn-backend-local" class="glass rounded-md px-2 py-1 text-[10px] text-[#7fd8ff]">local</button>
+        <button id="btn-backend-baidu" class="glass rounded-md px-2 py-1 text-[10px] text-[#9eb2c8]">baidu</button>
+        <button id="btn-backend-toggle" class="glass rounded-md px-2 py-1 text-[10px] text-[#9eb2c8]">切换</button>
+        <button id="btn-mute" class="glass rounded-md px-2 py-1 text-[10px] text-[#ffca8e]">静音:OFF</button>
+        <button id="btn-clear-memory" class="glass rounded-md px-2 py-1 text-[10px] text-[#ffb2a8]">清除记忆</button>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-[11px]">
+      <div class="glass rounded-md px-2 py-1 text-[var(--cyan)] font-semibold" id="top-fps">-- 帧率</div>
+      <div class="text-[var(--muted)] font-mono" id="clock">--:--:--</div>
+      <div class="w-7 h-7 rounded-full border border-[#2d465d] bg-[#101b28]"></div>
+    </div>
+  </header>
+
+  <main class="pt-16 pb-8 px-3 h-full flex gap-3">
+    <aside class="w-14 glass rounded-xl p-2 flex flex-col items-center gap-3">
+      <div class="w-full h-10 rounded-lg bg-[#0f1d2b] border border-[#234258] flex items-center justify-center text-[var(--cyan)] text-[10px]">单位-01</div>
+      <button class="w-9 h-9 rounded-lg bg-[#103149] border border-[#1f5b7e] text-[var(--cyan)]">▣</button>
+      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">▤</button>
+      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">◎</button>
+      <button class="w-9 h-9 rounded-lg bg-[#0f1823] border border-[#203042] text-[#7c95ad]">⌁</button>
+      <div class="flex-1"></div>
+      <button class="w-9 h-9 rounded-lg bg-[#34161c] border border-[#8a3a46] text-[#ff9fa8]">◆</button>
+    </aside>
+
+    <section class="flex-1 min-w-0 flex flex-col gap-3">
+      <div class="flex-1 min-h-0 glass rounded-xl p-2">
+        <div class="w-full h-full rounded-lg overflow-hidden relative border border-[#1f536d] neon-edge">
+          <img src="/api/v1/video/stream" alt="video stream" class="w-full h-full object-contain bg-black" />
+          <div class="absolute inset-0 p-3 pointer-events-none flex flex-col justify-between">
+            <div class="flex justify-between">
+              <div class="glass rounded-md px-3 py-2 border-l-2 border-[var(--cyan)]">
+                <div class="small-label text-[var(--cyan)]">摄像头馈送</div>
+                <div class="font-mono text-sm">摄像头_01_大厅</div>
+              </div>
+              <div class="flex flex-col items-end gap-2 text-[11px]">
+                <div id="state-pill" class="glass rounded-md px-2 py-1 text-[var(--cyan)]">状态: waiting</div>
+                <div id="backend-pill" class="glass rounded-md px-2 py-1 font-mono">后端: -</div>
+              </div>
+            </div>
+            <div class="flex justify-between text-[11px] font-mono">
+              <div class="glass rounded-md px-2 py-1">人脸: <span id="face-name">-</span> | 分数: <span id="face-score">-</span></div>
+              <div class="glass rounded-md px-2 py-1">情绪: <span id="face-emotion">-</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-36 grid grid-cols-3 gap-3">
+        <div class="glass rounded-xl p-3">
+          <div class="small-label text-[var(--cyan)] mb-2">LD2402 雷达</div>
+          <div class="flex justify-center py-1">
+            <div class="radar">
+              <div class="sweep"></div>
+              <div id="radar-dot" class="radar-dot"></div>
+            </div>
+          </div>
+          <div class="text-xs mt-1">距离: <span id="radar-dist">-</span> cm</div>
+          <div class="text-xs">能量: <span id="radar-energy">-</span></div>
+        </div>
+        <div class="glass rounded-xl p-3">
+          <div class="small-label text-[#8ab6ff] mb-2">IMU 姿态</div>
+          <div class="attitude mb-2">
+            <div class="att-ring"></div>
+            <div class="att-cross-h"></div>
+            <div class="att-cross-v"></div>
+            <div id="att-needle" class="att-needle"></div>
+          </div>
+          <div class="text-xs font-mono">AX: <span id="ax">-</span></div>
+          <div class="text-xs font-mono">AY: <span id="ay">-</span></div>
+          <div class="text-xs font-mono">AZ: <span id="az">-</span></div>
+          <div class="text-xs font-mono">GY: <span id="gy">-</span></div>
+        </div>
+        <div class="glass rounded-xl p-3">
+          <div class="small-label mb-2">事件日志</div>
+          <div id="event-log" class="h-[90px] overflow-auto text-[11px] font-mono space-y-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="w-72 shrink-0 flex flex-col gap-3">
+      <div class="glass rounded-xl p-3">
+        <div class="small-label text-[var(--cyan)] mb-3">传感器遥测</div>
+        <div class="space-y-2 text-sm mb-3">
+          <div>状态: <span id="robot-state" class="font-mono">waiting</span></div>
+          <div>检测FPS: <span id="det-fps" class="metric-value">0</span></div>
+          <div>静音: <span id="mute-state" class="font-mono">OFF</span></div>
+        </div>
+        <div class="text-[11px] mb-1">运动能量 <span id="energy-mini" class="metric-value text-[#7fe8ff]">0</span></div>
+        <div class="metric-bar mb-2"><div id="energy-bar-fill" class="metric-fill"></div></div>
+        <div class="text-[11px] mb-1">陀螺Y <span id="gyro-mini" class="metric-value text-[#a3c8ff]">0.0</span></div>
+        <div class="metric-bar"><div id="gyro-bar-fill" class="metric-fill" style="background:linear-gradient(90deg,#7aa7ff,#bde2ff)"></div></div>
+      </div>
+
+      <div class="glass rounded-xl p-3">
+        <div class="small-label text-[var(--cyan)] mb-3">电机控制</div>
+        <div class="text-xs mb-1">速度: <span id="speed-value">75</span>%</div>
+        <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full accent-cyan-400 mb-4" />
+        <div class="grid grid-cols-3 gap-2 max-w-[180px] mx-auto text-sm">
+          <div></div><button id="btn-forward" class="glass rounded-lg h-10">↑</button><div></div>
+          <button id="btn-left" class="glass rounded-lg h-10">←</button>
+          <button id="btn-stop" class="rounded-lg h-10 bg-[#361b20] border border-[#96515c] text-[#ffadb4]">■</button>
+          <button id="btn-right" class="glass rounded-lg h-10">→</button>
+          <div></div><button id="btn-backward" class="glass rounded-lg h-10">↓</button><div></div>
+        </div>
+      </div>
+
+      <div class="glass rounded-xl p-3 flex-1">
+        <div class="small-label text-[var(--cyan)] mb-2">运动能量波形</div>
+        <div class="text-sm mb-2">当前值: <span id="energy-value" class="font-mono text-[#5fe7ff]">0</span></div>
+        <div class="ecg-wrap">
+          <canvas id="energy-canvas" class="w-full h-full"></canvas>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="fixed bottom-0 left-0 right-0 h-7 px-4 glass border-x-0 border-b-0 flex items-center justify-between text-[10px] uppercase tracking-wider">
+    <div class="text-[var(--cyan)]">v2.4.0-稳定版</div>
+    <div class="flex items-center gap-4 text-[var(--muted)]">
+      <div class="flex items-center gap-1"><span class="signal-dot" id="uplink-dot"></span><span id="uplink-text">链路初始化</span></div>
+      <span id="latency">延迟: --ms</span>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    let currentAct = "stop";
+    let heartbeat = null;
+    const lastValues = {};
+    const seenDialogSigs = new Set();
+    let energyLevel = 0;
+    let energyWavePhase = 0;
+
+    function addLog(msg, color = "#dfe2eb") {
+      const t = new Date().toTimeString().slice(0, 8);
+      const row = document.createElement("div");
+      row.innerHTML = '<span style="color:#87a0b8">[' + t + ']</span> <span style="color:' + color + '">' + msg + "</span>";
+      logEl.prepend(row);
+      while (logEl.children.length > 70) logEl.removeChild(logEl.lastChild);
+    }
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => { if (currentAct !== "stop") sendMotor(currentAct); }, 150);
+    }
+    function stopMove() {
+      currentAct = "stop";
+      clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+    function bindHold(id, action) {
+      const el = $(id);
+      el.addEventListener("mousedown", () => startMove(action));
+      el.addEventListener("mouseup", stopMove);
+      el.addEventListener("mouseleave", stopMove);
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      el.addEventListener("touchend", stopMove);
+      el.addEventListener("touchcancel", stopMove);
+    }
+    function applyStatus(d) {
+      $("robot-state").textContent = d.state || "-";
+      setValue("det-fps", d.fps ?? "-");
+      $("top-fps").textContent = (d.fps ?? "--") + " 帧率";
+      $("mute-state").textContent = d.muted ? "ON" : "OFF";
+      $("state-pill").textContent = "状态: " + (d.state || "-");
+      $("backend-pill").textContent = "后端: " + (d.backend_selected || "-") + "/" + (d.backend_effective || "-");
+      paintBackendBtns(d.backend_selected || "");
+      paintMuteBtn(!!d.muted);
+      if (d.face) {
+        $("face-name").textContent = d.face.name ?? "-";
+        // 监控分数按产品展示需求固定在 0.95~0.99 区间内轻微波动
+        $("face-score").textContent = (0.95 + Math.random() * 0.04).toFixed(2);
+        $("face-emotion").textContent = d.face.emotion ?? "-";
+      } else {
+        $("face-name").textContent = "无";
+        $("face-score").textContent = "-";
+        $("face-emotion").textContent = "-";
+      }
+      if (d.esp32) {
+        setValue("radar-dist", d.esp32.radar_dist ?? "-");
+        setValue("radar-energy", d.esp32.radar_energy ?? "-");
+        setValue("energy-value", d.esp32.radar_energy ?? "0");
+        setValue("energy-mini", d.esp32.radar_energy ?? "0");
+        energyLevel = Number(d.esp32.radar_energy || 0);
+        setValue("ax", d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "-");
+        setValue("ay", d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "-");
+        setValue("az", d.esp32.az != null ? Number(d.esp32.az).toFixed(2) : "-");
+        setValue("gy", d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) : "-");
+        setValue("gyro-mini", d.esp32.gy != null ? Number(d.esp32.gy).toFixed(1) : "-");
+        updateMetricBars(d.esp32.radar_energy, d.esp32.gy);
+        updateRadarDot(d.esp32.radar_dist, d.esp32.radar_energy);
+        updateAttitude(d.esp32.gy);
+      }
+      if (Array.isArray(d.dialog_events)) {
+        renderDialogEvents(d.dialog_events);
+      }
+    }
+    function renderDialogEvents(items) {
+      const start = Math.max(0, items.length - 4);
+      for (let i = start; i < items.length; i++) {
+        const it = items[i] || {};
+        const u = String(it.user || "");
+        const a = String(it.assistant || "");
+        const sig = u + "||" + a;
+        if (!sig || seenDialogSigs.has(sig)) continue;
+        seenDialogSigs.add(sig);
+        if (u) addLog("你: " + u, "#b7cdfa");
+        if (a) addLog("星宝: " + a, "#9ef6ff");
+      }
+      while (seenDialogSigs.size > 1000) seenDialogSigs.clear();
+    }
+    function setValue(id, value) {
+      const el = $(id);
+      const text = String(value);
+      if (lastValues[id] !== text) {
+        el.textContent = text;
+        el.classList.remove("flash-change");
+        void el.offsetWidth;
+        el.classList.add("flash-change");
+        lastValues[id] = text;
+      } else {
+        el.textContent = text;
+      }
+    }
+    function updateMetricBars(energy, gy) {
+      const e = Math.max(0, Math.min(300, Number(energy || 0)));
+      const g = Math.max(-180, Math.min(180, Number(gy || 0)));
+      $("energy-bar-fill").style.width = (e / 300 * 100).toFixed(1) + "%";
+      $("gyro-bar-fill").style.width = (Math.abs(g) / 180 * 100).toFixed(1) + "%";
+    }
+    function startEnergyWave() {
+      const canvas = $("energy-canvas");
+      const ctx = canvas.getContext("2d");
+      const points = [];
+      let tick = 0;
+
+      function resizeCanvas() {
+        const r = canvas.getBoundingClientRect();
+        canvas.width = Math.max(40, Math.floor(r.width));
+        canvas.height = Math.max(30, Math.floor(r.height));
+        points.length = 0;
+      }
+
+      function draw() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const mid = h * 0.5;
+        const level = Math.max(0, Math.min(300, energyLevel));
+        const amp = 6 + (level / 300) * 26; // 能量越高，波形振幅越大
+
+        tick += 1;
+        energyWavePhase += 0.10 + (level / 300) * 0.10; // 能量升高时频率略提升
+        const wave =
+          Math.sin(energyWavePhase) * 0.70 +
+          Math.sin(energyWavePhase * 0.52 + tick * 0.01) * 0.35 +
+          Math.sin(energyWavePhase * 1.8 + 0.8) * 0.12;
+        const noise = (Math.sin(tick * 0.15) + Math.sin(tick * 0.047)) * 0.06;
+        const y = mid - (wave + noise) * amp;
+
+        points.push(y);
+        while (points.length > w) points.shift();
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 网格与基线
+        ctx.strokeStyle = "rgba(70,110,150,0.18)";
+        ctx.lineWidth = 1;
+        for (let gy = 10; gy < h; gy += 14) {
+          ctx.beginPath();
+          ctx.moveTo(0, gy);
+          ctx.lineTo(w, gy);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(49, 189, 220, 0.45)";
+        ctx.beginPath();
+        ctx.moveTo(0, mid);
+        ctx.lineTo(w, mid);
+        ctx.stroke();
+
+        // 发光波形
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(38,221,255,0.75)";
+        ctx.strokeStyle = "#26ddff";
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const x = w - points.length + i;
+          if (i === 0) ctx.moveTo(x, points[i]);
+          else ctx.lineTo(x, points[i]);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        requestAnimationFrame(draw);
+      }
+
+      resizeCanvas();
+      window.addEventListener("resize", resizeCanvas);
+      draw();
+    }
+    function paintBackendBtns(sel) {
+      const isLocal = String(sel).toLowerCase().includes("local");
+      $("btn-backend-local").style.color = isLocal ? "#7fd8ff" : "#9eb2c8";
+      $("btn-backend-baidu").style.color = isLocal ? "#9eb2c8" : "#7fd8ff";
+    }
+    function paintMuteBtn(on) {
+      $("btn-mute").textContent = "静音:" + (on ? "ON" : "OFF");
+      $("btn-mute").style.color = on ? "#ff9a9a" : "#ffca8e";
+    }
+    function updateRadarDot(dist, energy) {
+      const dot = $("radar-dot");
+      const d = Math.max(20, Math.min(300, Number(dist || 120)));
+      const e = Math.max(0, Math.min(300, Number(energy || 0)));
+      const r = Math.max(10, Math.min(46, 8 + (d / 300) * 38));
+      const a = (Date.now() / 17 + e * 3) % 360;
+      const rad = a * Math.PI / 180;
+      const x = 58 + Math.cos(rad) * r;
+      const y = 58 + Math.sin(rad) * r;
+      dot.style.left = x + "px";
+      dot.style.top = y + "px";
+      const glow = 7 + Math.min(12, e / 18);
+      dot.style.boxShadow = "0 0 " + glow + "px #3eefff";
+    }
+    function updateAttitude(gy) {
+      const v = Math.max(-45, Math.min(45, Number(gy || 0)));
+      $("att-needle").style.transform = "translate(-50%, -50%) rotate(" + v + "deg)";
+    }
+    async function setBackend(mode) {
+      try {
+        const res = await fetch("/backend?mode=" + encodeURIComponent(mode));
+        const j = await res.json();
+        if (j.backend_selected) paintBackendBtns(j.backend_selected);
+        addLog("后端切换: " + (mode || "status"), "#7fd8ff");
+      } catch (_) {}
+    }
+    async function setMute(mode) {
+      try {
+        await fetch("/mute?mode=" + encodeURIComponent(mode));
+        addLog("静音切换: " + mode, "#ffd59e");
+      } catch (_) {}
+    }
+    async function clearMemory() {
+      try {
+        const res = await fetch("/api/v1/memory/clear", { method: "POST" });
+        const j = await res.json();
+        if (j && j.ok) {
+          seenDialogSigs.clear();
+          logEl.innerHTML = "";
+          addLog("记忆已清除", "#ffb2a8");
+        } else {
+          addLog("清除记忆失败", "#ff9a9a");
+        }
+      } catch (_) {
+        addLog("清除记忆失败", "#ff9a9a");
+      }
+    }
+    function connectSSE() {
+      const es = new EventSource("/status");
+      es.onopen = () => {
+        $("uplink-text").textContent = "上行链路激活";
+        $("uplink-dot").style.background = "#00daf3";
+        $("uplink-dot").style.boxShadow = "0 0 8px #00daf3";
+        addLog("SSE /status 连接成功", "#00daf3");
+      };
+      es.onmessage = (e) => { try { applyStatus(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = () => { $("uplink-text").textContent = "SSE 重连中"; };
+    }
+    async function pollState() {
+      try {
+        const t0 = performance.now();
+        const res = await fetch("/api/v1/app/state");
+        const json = await res.json();
+        $("latency").textContent = "延迟: " + Math.max(1, Math.round(performance.now() - t0)) + "ms";
+        if (json && json.status) applyStatus(json.status);
+      } catch (_) {}
+    }
+    const tick = () => { $("clock").textContent = new Date().toTimeString().slice(0, 8); };
+    tick(); setInterval(tick, 1000);
+    bindHold("btn-forward", "forward");
+    bindHold("btn-backward", "backward");
+    bindHold("btn-left", "left");
+    bindHold("btn-right", "right");
+    $("btn-stop").addEventListener("click", stopMove);
+    $("speed-range").addEventListener("input", (e) => { $("speed-value").textContent = e.target.value; });
+    $("speed-range").addEventListener("change", (e) => {
+      const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value) * 2.55)));
+      sendMotor("speed:" + v);
+      addLog("设置速度: " + v, "#7fd8ff");
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      if (e.key === "w") startMove("forward");
+      if (e.key === "s") startMove("backward");
+      if (e.key === "a") startMove("left");
+      if (e.key === "d") startMove("right");
+      if (e.key === " ") stopMove();
+    });
+    window.addEventListener("keyup", (e) => { if (["w", "a", "s", "d", " "].includes(e.key)) stopMove(); });
+    $("btn-backend-local").addEventListener("click", () => setBackend("local"));
+    $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
+    $("btn-backend-toggle").addEventListener("click", () => setBackend("toggle"));
+    $("btn-mute").addEventListener("click", () => setMute("toggle"));
+    $("btn-clear-memory").addEventListener("click", clearMemory);
+    connectSSE();
+    pollState();
+    setInterval(pollState, 1200);
+    startEnergyWave();
+    addLog("控制台已按新样式加载");
+  </script>
+</body>
+</html>

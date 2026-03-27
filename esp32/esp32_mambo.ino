@@ -3,6 +3,8 @@
 // 串口: Serial(USB调试) / Serial1(香橙派通信 RX=16 TX=17) / Serial2(LD2402 RX=18 TX=19)
 
 #include <Wire.h>
+#include <esp_task_wdt.h>
+#include <esp_idf_version.h>
 
 // ================= 引脚配置 =================
 const int SDA_PIN = 8,  SCL_PIN = 9;
@@ -13,6 +15,7 @@ const int ENA = 10, IN1 = 11, IN2 = 12, IN3 = 13, IN4 = 14, ENB = 15;
 
 // ================= 全局变量 =================
 #define MPU_ADDR 0x68
+const int MAIN_WDT_TIMEOUT_S = 8;
 
 unsigned long last_send_time = 0;
 unsigned long last_cmd_time  = 0;
@@ -173,6 +176,27 @@ void setup() {
     delay(500);
     Serial.println("=== ESP32-S3 Mambo 启动 ===");
 
+    // 主循环看门狗：若程序卡死，自动复位，避免手动按复位键
+    esp_err_t wdt_init_ret = ESP_FAIL;
+#if defined(ESP_IDF_VERSION_MAJOR) && (ESP_IDF_VERSION_MAJOR >= 5)
+    const esp_task_wdt_config_t wdt_cfg = {
+        .timeout_ms = (uint32_t)MAIN_WDT_TIMEOUT_S * 1000,
+        .idle_core_mask = 0,
+        .trigger_panic = true,
+    };
+    wdt_init_ret = esp_task_wdt_init(&wdt_cfg);
+#else
+    wdt_init_ret = esp_task_wdt_init(MAIN_WDT_TIMEOUT_S, true);
+#endif
+
+    esp_err_t wdt_add_ret = esp_task_wdt_add(NULL);
+    if ((wdt_init_ret == ESP_OK || wdt_init_ret == ESP_ERR_INVALID_STATE) &&
+        (wdt_add_ret == ESP_OK || wdt_add_ret == ESP_ERR_INVALID_ARG || wdt_add_ret == ESP_ERR_INVALID_STATE)) {
+        Serial.printf("[OK] WDT 已启用，超时=%ds\n", MAIN_WDT_TIMEOUT_S);
+    } else {
+        Serial.printf("[WARN] WDT 初始化失败 init_err=%d add_err=%d\n", (int)wdt_init_ret, (int)wdt_add_ret);
+    }
+
     Serial1.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
 
     // LD2402 串口（纯文本模式，无需发配置命令）
@@ -199,6 +223,7 @@ void setup() {
 
 // ================= loop =================
 void loop() {
+    esp_task_wdt_reset();
     unsigned long now_ms = millis();
 
     // 超时自动停止

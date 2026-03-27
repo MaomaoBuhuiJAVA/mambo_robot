@@ -13,6 +13,10 @@
 #include <condition_variable>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
+#include <deque>
+#include <fstream>
+#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -484,6 +488,7 @@ public:
             "action: stop/forward/backward/left/right，duration最大10秒"
             "转圈=left,5秒；前进=forward,2秒；后退=backward,2秒；左/右转=left/right,3秒"
         }});
+        LoadConversationMemory();
         std::cerr << "[Dialog] 两条独立链路: baidu=百度ASR+百度TTS+DeepSeek；local=124.222.205.168 全链路，互不切换\n";
     }
     void Start() { worker_thread_ = std::thread(&DialogSystem::AudioLoop, this); }
@@ -655,6 +660,37 @@ public:
     }
     void SetCurrentEmotion(const std::string& e) { std::lock_guard<std::mutex> lk(mtx_); current_emotion_ = e; }
     int GetMicRms() const { return mic_rms_.load(); }
+    std::string GetRecentDialogEventsJson() const {
+        std::lock_guard<std::mutex> lk(memory_mtx_);
+        json arr = json::array();
+        for (const auto& x : recent_dialogs_) {
+            arr.push_back({{"user", x.first}, {"assistant", x.second}});
+        }
+        return arr.dump();
+    }
+    std::string ClearConversationMemoryJson() {
+        {
+            std::lock_guard<std::mutex> lk(memory_mtx_);
+            recent_dialogs_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (!chat_history_.empty()) {
+                auto system_prompt = chat_history_.front();
+                chat_history_.clear();
+                chat_history_.push_back(system_prompt);
+            }
+        }
+        bool ok = (std::remove(memory_file_.c_str()) == 0);
+        if (!ok) {
+            std::ofstream ofs(memory_file_, std::ios::trunc);
+            ok = (bool)ofs;
+        }
+        json j;
+        j["ok"] = ok;
+        j["message"] = ok ? "memory_cleared" : "memory_clear_failed";
+        return j.dump();
+    }
 
 private:
     SerialManager* serial_;
@@ -662,14 +698,91 @@ private:
     std::thread worker_thread_;
     std::thread process_thread_;  // ProcessInteraction 独立线程
     std::atomic<ChatState> chat_state_;
-    std::atomic<NluBackendMode> backend_mode_{NluBackendMode::kBaiduDeepseek};
-    std::atomic<NluBackendMode> effective_backend_{NluBackendMode::kBaiduDeepseek};
+    std::atomic<NluBackendMode> backend_mode_{NluBackendMode::kLocalModels};
+    std::atomic<NluBackendMode> effective_backend_{NluBackendMode::kLocalModels};
     std::atomic<bool> muted_{true};
     std::atomic<bool> interrupt_{false};  // 打断标志
     std::vector<json> chat_history_;
     std::mutex mtx_;
     std::string current_emotion_ = "ZhongXing";
     std::atomic<int> mic_rms_{0};
+    mutable std::mutex memory_mtx_;
+    std::deque<std::pair<std::string, std::string>> recent_dialogs_;
+    const std::string memory_file_ = "./data/dialog_memory.jsonl";
+
+    static long long NowEpochMs() {
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    }
+
+    void AppendConversationMemory(const std::string& user, const std::string& assistant) {
+        if (user.empty() && assistant.empty()) return;
+        {
+            std::lock_guard<std::mutex> lk(memory_mtx_);
+            recent_dialogs_.push_back({user, assistant});
+            while (recent_dialogs_.size() > 30) recent_dialogs_.pop_front();
+        }
+        try { std::filesystem::create_directories("./data"); } catch (...) {}
+        try {
+            std::ofstream ofs(memory_file_, std::ios::app);
+            if (ofs) {
+                json rec = {{"ts_ms", NowEpochMs()}, {"user", user}, {"assistant", assistant}};
+                ofs << rec.dump() << "\n";
+            }
+        } catch (...) {}
+    }
+
+    void LoadConversationMemory() {
+        std::ifstream ifs(memory_file_);
+        if (!ifs) return;
+
+        std::vector<std::pair<std::string, std::string>> loaded;
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (line.empty()) continue;
+            try {
+                auto j = json::parse(line);
+                std::string user = j.value("user", "");
+                std::string assistant = j.value("assistant", "");
+                if (!user.empty() || !assistant.empty()) loaded.push_back({user, assistant});
+            } catch (...) {}
+        }
+        if (loaded.empty()) return;
+
+        size_t start = loaded.size() > 10 ? loaded.size() - 10 : 0;
+        {
+            std::lock_guard<std::mutex> lk(memory_mtx_);
+            for (size_t i = start; i < loaded.size(); ++i) {
+                recent_dialogs_.push_back(loaded[i]);
+                while (recent_dialogs_.size() > 30) recent_dialogs_.pop_front();
+            }
+        }
+        for (size_t i = start; i < loaded.size(); ++i) {
+            if (!loaded[i].first.empty())
+                chat_history_.push_back({{"role", "user"}, {"content", loaded[i].first}});
+            if (!loaded[i].second.empty())
+                chat_history_.push_back({{"role", "assistant"}, {"content", loaded[i].second}});
+        }
+        std::cerr << "[Memory] 已加载历史记忆 " << (loaded.size() - start) << " 轮\n";
+    }
+
+    static bool UserHasMotionIntent(const std::string& text) {
+        if (text.empty()) return false;
+        std::string s = text;
+        for (char& c : s) c = (char)std::tolower((unsigned char)c);
+        auto has = [&s](const char* k) { return s.find(k) != std::string::npos; };
+        // 中文关键词
+        if (text.find("前进") != std::string::npos || text.find("往前") != std::string::npos ||
+            text.find("后退") != std::string::npos || text.find("往后") != std::string::npos ||
+            text.find("左转") != std::string::npos || text.find("右转") != std::string::npos ||
+            text.find("转圈") != std::string::npos || text.find("旋转") != std::string::npos ||
+            text.find("向左") != std::string::npos || text.find("向右") != std::string::npos) {
+            return true;
+        }
+        // 英文关键词
+        return has("forward") || has("backward") || has("left") || has("right")
+            || has("turn") || has("spin") || has("rotate");
+    }
 
     void AudioLoop() {
         snd_pcm_t* h_rec;
@@ -871,6 +984,10 @@ private:
             std::string action     = ai_json.value("action", "stop");
             std::string emotion    = ai_json.value("emotion", "ZhongXing");
             float duration         = std::min(ai_json.value("duration", 0.0f), 10.0f);
+            if (!UserHasMotionIntent(user_text)) {
+                action = "stop";
+                duration = 0.0f;
+            }
             std::cerr << "[LLM] reply=" << reply_text << " emotion=" << emotion
                       << " action=" << action << " duration=" << duration << "\n";
 
@@ -900,6 +1017,7 @@ private:
                 else
                     TtsPlay(reply_text, AppConfig::kAlsaPlayDevice, cfg->tts_url);
             }
+            AppendConversationMemory(user_text, reply_text);
 
         } catch (const std::exception& e) {
             std::cerr << "[Error] 解析失败: " << e.what() << "\n";

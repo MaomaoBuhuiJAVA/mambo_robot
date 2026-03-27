@@ -33,6 +33,7 @@ int main() {
     web.SetBackendHttpHandler([&dialog](const std::string& mode) { return dialog.HandleBackendHttp(mode); });
     web.SetMuteCommandHandler([&dialog](const std::string& cmd) { dialog.HandleConsoleCommand(cmd); });
     web.SetDiagBaiduDeepseekHandler([&dialog]() { return dialog.RunBaiduDeepseekDiagJson(); });
+    web.SetClearMemoryHandler([&dialog]() { return dialog.ClearConversationMemoryJson(); });
     dialog.Start();
     std::cerr << "[Console] 输入 `1`(local) / `2`(baidu) / `toggle` 一键切换 ASR+LLM+TTS 后端；输入 `backend ?` 查看当前。\n";
 
@@ -250,6 +251,7 @@ int main() {
                 json += buf;
             }
             json += "]";
+            json += ",\"dialog_events\":" + dialog.GetRecentDialogEventsJson();
             std::string espStatus = serial.GetEsp32Status();
             if (!espStatus.empty()) json += ",\"esp32\":{" + espStatus + "}";
             json += "}";

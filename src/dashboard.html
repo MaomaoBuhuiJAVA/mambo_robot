@@ -1,4 +1,985 @@
 <!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STAR GEM | 机器人控制后台</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <style>
+    body { background:#10141a; color:#dfe2eb; font-family:'Space Grotesk',sans-serif; overflow:hidden; }
+    .glass { background:rgba(24,28,34,.6); border:1px solid rgba(49,53,60,.3); backdrop-filter:blur(16px); }
+    .neon { border-color:#00daf3; box-shadow:0 0 12px rgba(0,218,243,.35); }
+    .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+  <header class="h-16 px-6 fixed top-0 left-0 right-0 z-50 bg-[#10141a]/80 border-b border-[#31353c]/40 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <div class="text-2xl font-bold tracking-tight text-[#00daf3]">STAR GEM</div>
+      <div class="hidden md:flex gap-4 text-xs text-[#bac9cc]">
+        <span>云端同步</span><span>本地模式</span><span>音频设置</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <div class="glass rounded px-3 py-1"><span id="top-fps" class="text-[#00daf3]">-- 帧率</span></div>
+      <div id="clock" class="font-mono text-[#bac9cc]">--:--:--</div>
+    </div>
+  </header>
+
+  <main class="pt-20 pb-10 px-6 h-full flex gap-6 overflow-hidden">
+    <section class="flex-1 flex flex-col gap-6">
+      <div class="flex-1 glass neon rounded-xl overflow-hidden relative">
+        <img id="video-feed" src="/api/v1/video/stream" alt="video" class="w-full h-full object-cover" />
+        <div class="absolute inset-0 p-4 flex flex-col justify-between pointer-events-none">
+          <div class="flex justify-between">
+            <div class="glass rounded px-3 py-2 text-xs border-l-2 border-[#00daf3]">
+              <div class="text-[#00daf3] uppercase tracking-widest">主画面馈送</div>
+              <div class="font-mono text-sm text-white">摄像头_01_大厅</div>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+              <div id="state-pill" class="glass rounded px-2 py-1 text-xs text-[#00daf3]">状态: waiting</div>
+              <div id="backend-pill" class="glass rounded px-2 py-1 text-xs font-mono">后端: -</div>
+            </div>
+          </div>
+          <div class="flex justify-between text-xs font-mono">
+            <div class="glass rounded px-2 py-1">人脸: <span id="face-name">-</span> | 置信: <span id="face-score">-</span></div>
+            <div class="glass rounded px-2 py-1">情绪: <span id="face-emotion">-</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-64 grid grid-cols-3 gap-6">
+        <div class="glass rounded-xl p-4">
+          <div class="text-[11px] tracking-widest text-[#00daf3] uppercase mb-3">LD2402 雷达</div>
+          <div class="h-28 rounded-full border border-[#3b494c] relative overflow-hidden">
+            <div class="absolute inset-0 bg-[conic-gradient(from_0deg,rgba(0,218,243,.2)_0%,transparent_30%)]"></div>
+          </div>
+          <div class="text-xs mt-3">距离: <span id="radar-dist">-</span> cm</div>
+          <div class="text-xs">能量: <span id="radar-energy">-</span></div>
+        </div>
+        <div class="glass rounded-xl p-4">
+          <div class="text-[11px] tracking-widest text-[#b0c6ff] uppercase mb-3">IMU 姿态</div>
+          <div class="text-xs font-mono">AX: <span id="ax">-</span></div>
+          <div class="text-xs font-mono">AY: <span id="ay">-</span></div>
+          <div class="text-xs font-mono">AZ: <span id="az">-</span></div>
+        </div>
+        <div class="glass rounded-xl p-4 flex flex-col">
+          <div class="text-[11px] tracking-widest text-[#bac9cc] uppercase mb-3">事件日志</div>
+          <div id="event-log" class="text-xs font-mono flex-1 overflow-auto"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="w-80 flex flex-col gap-6">
+      <div class="glass rounded-xl p-4 space-y-2">
+        <div class="text-[11px] tracking-widest text-[#00daf3] uppercase">传感器遥测</div>
+        <div class="text-sm">状态: <span id="robot-state" class="font-mono">waiting</span></div>
+        <div class="text-sm">检测FPS: <span id="det-fps" class="font-mono">0</span></div>
+        <div class="text-sm">静音: <span id="mute-state" class="font-mono">-</span></div>
+      </div>
+
+      <div class="glass rounded-xl p-4">
+        <div class="text-[11px] tracking-widest text-[#00daf3] uppercase mb-3">电机控制</div>
+        <div class="mb-4 text-xs">速度: <span id="speed-value">75</span>%</div>
+        <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full accent-cyan-400 mb-5" />
+        <div class="grid grid-cols-3 gap-3 max-w-[200px] mx-auto">
+          <div></div><button id="btn-forward" class="glass rounded p-3">↑</button><div></div>
+          <button id="btn-left" class="glass rounded p-3">←</button>
+          <button id="btn-stop" class="rounded p-3 bg-[#93000a]/20 border border-[#ffb4ab]/50 text-[#ffb4ab]">■</button>
+          <button id="btn-right" class="glass rounded p-3">→</button>
+          <div></div><button id="btn-backward" class="glass rounded p-3">↓</button><div></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="h-8 px-6 fixed bottom-0 left-0 right-0 bg-[#10141a]/90 border-t border-[#31353c] flex items-center justify-between text-[10px] uppercase tracking-widest">
+    <div class="text-[#00daf3]">v2.4.0-稳定版</div>
+    <div class="flex items-center gap-4 text-[#bac9cc]">
+      <span id="uplink-text">链路初始化</span>
+      <span id="latency">延迟: --ms</span>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    let currentAct = "stop";
+    let heartbeat = null;
+
+    function addLog(msg, color = "#dfe2eb") {
+      const t = new Date().toTimeString().slice(0, 8);
+      const row = document.createElement("div");
+      row.innerHTML = '<span style="color:#8b949e">[' + t + ']</span> <span style="color:' + color + '">' + msg + "</span>";
+      logEl.prepend(row);
+      while (logEl.children.length > 60) logEl.removeChild(logEl.lastChild);
+    }
+
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => { if (currentAct !== "stop") sendMotor(currentAct); }, 150);
+    }
+    function stopMove() {
+      currentAct = "stop";
+      clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+    function bindHold(id, action) {
+      const el = $(id);
+      el.addEventListener("mousedown", () => startMove(action));
+      el.addEventListener("mouseup", stopMove);
+      el.addEventListener("mouseleave", stopMove);
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      el.addEventListener("touchend", stopMove);
+      el.addEventListener("touchcancel", stopMove);
+    }
+
+    function applyStatus(d) {
+      $("robot-state").textContent = d.state || "-";
+      $("det-fps").textContent = d.fps ?? "-";
+      $("top-fps").textContent = (d.fps ?? "--") + " 帧率";
+      $("mute-state").textContent = d.muted ? "ON" : "OFF";
+      $("state-pill").textContent = "状态: " + (d.state || "-");
+      $("backend-pill").textContent = "后端: " + (d.backend_selected || "-") + "/" + (d.backend_effective || "-");
+      if (d.face) {
+        $("face-name").textContent = d.face.name ?? "-";
+        $("face-score").textContent = d.face.score != null ? Number(d.face.score).toFixed(2) : "-";
+        $("face-emotion").textContent = d.face.emotion ?? "-";
+      } else {
+        $("face-name").textContent = "无";
+        $("face-score").textContent = "-";
+        $("face-emotion").textContent = "-";
+      }
+      if (d.esp32) {
+        $("radar-dist").textContent = d.esp32.radar_dist ?? "-";
+        $("radar-energy").textContent = d.esp32.radar_energy ?? "-";
+        $("ax").textContent = d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "-";
+        $("ay").textContent = d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "-";
+        $("az").textContent = d.esp32.az != null ? Number(d.esp32.az).toFixed(2) : "-";
+      }
+    }
+
+    function connectSSE() {
+      const es = new EventSource("/status");
+      es.onopen = () => { $("uplink-text").textContent = "上行链路激活"; addLog("SSE /status 连接成功", "#00daf3"); };
+      es.onmessage = (e) => { try { applyStatus(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = () => { $("uplink-text").textContent = "SSE 重连中"; };
+    }
+
+    async function pollState() {
+      try {
+        const t0 = performance.now();
+        const res = await fetch("/api/v1/app/state");
+        const json = await res.json();
+        $("latency").textContent = "延迟: " + Math.round(performance.now() - t0) + "ms";
+        if (json && json.status) applyStatus(json.status);
+      } catch (_) {}
+    }
+
+    function init() {
+      const tick = () => { $("clock").textContent = new Date().toTimeString().slice(0, 8); };
+      tick(); setInterval(tick, 1000);
+      bindHold("btn-forward", "forward");
+      bindHold("btn-backward", "backward");
+      bindHold("btn-left", "left");
+      bindHold("btn-right", "right");
+      $("btn-stop").addEventListener("click", stopMove);
+      $("speed-range").addEventListener("input", (e) => { $("speed-value").textContent = e.target.value; });
+      $("speed-range").addEventListener("change", (e) => {
+        const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value) * 2.55)));
+        sendMotor("speed:" + v);
+        addLog("设置速度: " + v, "#fbbbff");
+      });
+      window.addEventListener("keydown", (e) => {
+        if (e.repeat) return;
+        if (e.key === "w") startMove("forward");
+        if (e.key === "s") startMove("backward");
+        if (e.key === "a") startMove("left");
+        if (e.key === "d") startMove("right");
+        if (e.key === " ") stopMove();
+      });
+      window.addEventListener("keyup", (e) => { if (["w", "a", "s", "d", " "].includes(e.key)) stopMove(); });
+      connectSSE();
+      pollState();
+      setInterval(pollState, 1200);
+      addLog("控制台已加载", "#dfe2eb");
+    }
+    init();
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STAR GEM | 机器人控制后台</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <style>
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    .glass-panel { background: rgba(24, 28, 34, 0.6); backdrop-filter: blur(20px); border: 1px solid rgba(49, 53, 60, 0.3); }
+    .neon-border-active { border-color: #00daf3; box-shadow: 0 0 10px rgba(0, 218, 243, 0.4); }
+    body { background-color: #10141a; color: #dfe2eb; font-family: 'Space Grotesk', sans-serif; overflow: hidden; }
+    .radar-sweep { background: conic-gradient(from 0deg, rgba(0, 218, 243, 0.2) 0%, transparent 25%); }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #31353c; border-radius: 10px; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+  <header class="bg-[#10141a]/80 backdrop-blur-xl border-b border-[#31353c]/20 shadow-[0_4px_20px_rgba(0,0,0,0.4)] fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 tracking-tight">
+    <div class="flex items-center gap-4">
+      <span class="text-2xl font-bold tracking-tighter text-[#00daf3]">STAR GEM</span>
+      <div class="hidden md:flex gap-6 ml-8">
+        <a class="text-[#00daf3] border-b-2 border-[#00daf3] pb-1" href="#">云端同步</a>
+        <a class="text-[#bac9cc]" href="#">本地模式</a>
+        <a class="text-[#bac9cc]" href="#">音频设置</a>
+      </div>
+    </div>
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2 px-3 py-1 rounded bg-[#262a31] border border-[#3b494c]/20">
+        <span class="material-symbols-outlined text-xs text-[#00daf3]">speed</span>
+        <span id="top-fps" class="text-[10px] font-bold uppercase tracking-widest text-[#00daf3]">-- 帧率</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[#bac9cc]">schedule</span>
+        <span id="clock" class="text-xs font-mono text-[#bac9cc]">--:--:--</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 flex pt-20 pb-10 px-6 gap-6 overflow-hidden">
+    <div class="flex-1 flex flex-col gap-6 h-full">
+      <div class="flex-1 glass-panel rounded-xl overflow-hidden relative group neon-border-active">
+        <img id="video-feed" class="w-full h-full object-cover" alt="video feed" src="/api/v1/video/stream" />
+        <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-6">
+          <div class="flex justify-between items-start">
+            <div class="bg-black/40 backdrop-blur-md px-4 py-2 rounded border-l-2 border-[#00daf3]">
+              <div class="text-[10px] text-[#00daf3] tracking-widest uppercase font-bold">主画面馈送</div>
+              <div class="text-xl font-mono text-white">摄像头_01_大厅</div>
+            </div>
+            <div class="flex flex-col gap-2 items-end">
+              <div id="ai-state-banner" class="bg-[#00daf3]/20 text-[#00daf3] text-[10px] px-2 py-1 rounded border border-[#00daf3]/30">状态: waiting</div>
+              <div class="bg-black/40 backdrop-blur-md px-3 py-1 rounded border-r-2 border-[#00daf3]">
+                <span id="emotion-pill" class="text-xs font-mono">情绪: -</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-between items-end">
+            <div class="flex gap-4">
+              <div class="text-center"><div class="text-[8px] text-[#bac9cc] uppercase">人脸</div><div id="face-name" class="text-sm font-mono text-white">-</div></div>
+              <div class="text-center"><div class="text-[8px] text-[#bac9cc] uppercase">置信度</div><div id="face-score" class="text-sm font-mono text-white">-</div></div>
+            </div>
+            <div class="bg-black/60 backdrop-blur-md p-2 rounded-lg border border-[#3b494c]/30 flex gap-4 items-center">
+              <div class="flex items-center gap-2">
+                <div id="sse-dot" class="w-2 h-2 rounded-full bg-[#ffb4ab]"></div>
+                <span id="sse-label" class="text-[10px] uppercase font-bold tracking-widest">SSE 连接中...</span>
+              </div>
+              <div class="w-[1px] h-4 bg-[#3b494c]"></div>
+              <span id="backend-label" class="text-[10px] font-mono">后端: -</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-64 flex gap-6">
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-[10px] font-bold tracking-widest text-[#00daf3] uppercase">LD2402 雷达</span>
+            <span class="material-symbols-outlined text-sm text-[#bac9cc]">radar</span>
+          </div>
+          <div class="flex-1 relative flex items-center justify-center">
+            <div class="w-40 h-40 rounded-full border border-[#3b494c]/30 relative overflow-hidden">
+              <div class="absolute inset-0 border border-[#3b494c]/10 rounded-full scale-75"></div>
+              <div class="absolute inset-0 border border-[#3b494c]/10 rounded-full scale-50"></div>
+              <div class="absolute inset-0 radar-sweep"></div>
+            </div>
+          </div>
+          <div class="text-[10px] mt-2 text-[#bac9cc]">距离: <span id="radar-dist">-</span> cm | 能量: <span id="radar-energy">-</span></div>
+        </div>
+
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-[10px] font-bold tracking-widest text-[#b0c6ff] uppercase">IMU 姿态</span>
+            <span class="material-symbols-outlined text-sm text-[#bac9cc]">explore</span>
+          </div>
+          <div class="flex-1 flex items-center justify-center">
+            <div class="w-32 h-32 rounded-full border-2 border-[#b0c6ff]/20 relative rotate-12 flex items-center justify-center">
+              <div class="absolute w-full h-[1px] bg-[#b0c6ff]/40"></div>
+              <div class="absolute h-full w-[1px] bg-[#b0c6ff]/40"></div>
+              <div class="w-24 h-24 rounded-full border border-[#b0c6ff]/60 border-dashed animate-[spin_10s_linear_infinite]"></div>
+            </div>
+          </div>
+          <div class="text-[10px] mt-2 text-[#bac9cc]">AX:<span id="ax">-</span> AY:<span id="ay">-</span> AZ:<span id="az">-</span></div>
+        </div>
+
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col font-mono text-[10px] overflow-hidden">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold tracking-widest text-[#bac9cc] uppercase">事件日志</span>
+            <span class="w-2 h-2 rounded-full bg-[#00daf3] animate-pulse"></span>
+          </div>
+          <div id="event-log" class="flex-1 flex flex-col gap-1 overflow-y-auto pr-2 custom-scrollbar"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="w-72 flex flex-col gap-6">
+      <section class="glass-panel rounded-xl p-5">
+        <h3 class="text-xs font-bold uppercase tracking-widest text-[#00daf3] mb-4 flex items-center gap-2"><span class="material-symbols-outlined text-sm">sensors</span>传感器遥测</h3>
+        <div class="space-y-4">
+          <div class="border-b border-[#3b494c]/10 pb-2"><div class="text-[8px] text-[#bac9cc] uppercase">状态</div><div id="robot-state" class="text-lg font-mono leading-none">waiting</div></div>
+          <div class="border-b border-[#3b494c]/10 pb-2"><div class="text-[8px] text-[#bac9cc] uppercase">检测 FPS</div><div id="det-fps" class="text-lg font-mono leading-none">0</div></div>
+          <div class="border-b border-[#3b494c]/10 pb-2"><div class="text-[8px] text-[#bac9cc] uppercase">静音</div><div id="mute-state" class="text-lg font-mono leading-none">未知</div></div>
+        </div>
+      </section>
+
+      <section class="glass-panel rounded-xl p-5">
+        <h3 class="text-xs font-bold uppercase tracking-widest text-[#00daf3] mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-sm">settings_remote</span>电机控制</h3>
+        <div class="mb-8">
+          <div class="flex justify-between text-[10px] mb-2 uppercase font-mono">
+            <span>速度</span><span class="text-[#00daf3]"><span id="speed-value">75</span>%</span>
+          </div>
+          <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full accent-cyan-400" />
+        </div>
+        <div class="grid grid-cols-3 gap-3 max-w-[180px] mx-auto">
+          <div></div><button id="btn-forward" class="aspect-square glass-panel rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-[#00daf3]">arrow_upward</span></button><div></div>
+          <button id="btn-left" class="aspect-square glass-panel rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-[#00daf3]">arrow_back</span></button>
+          <button id="btn-stop" class="aspect-square bg-[#93000a]/20 border border-[#ffb4ab]/50 rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-[#ffb4ab]">stop</span></button>
+          <button id="btn-right" class="aspect-square glass-panel rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-[#00daf3]">arrow_forward</span></button>
+          <div></div><button id="btn-backward" class="aspect-square glass-panel rounded-lg flex items-center justify-center"><span class="material-symbols-outlined text-[#00daf3]">arrow_downward</span></button><div></div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="bg-[#10141a]/90 backdrop-blur-md border-t border-[#00daf3]/10 fixed bottom-0 w-full h-8 flex items-center justify-between px-8 z-50 text-[10px] uppercase tracking-widest">
+    <div class="flex gap-6 items-center">
+      <span class="text-[#00daf3] font-mono">v2.4.0-稳定版</span>
+      <div class="flex gap-4 text-[#bac9cc]"><span>WASD: 移动控制</span><span>空格: 刹车</span></div>
+    </div>
+    <div class="flex items-center gap-4 text-[#bac9cc]">
+      <div class="flex items-center gap-1"><span id="uplink-dot" class="w-1.5 h-1.5 rounded-full bg-[#ffb4ab]"></span><span id="uplink-text">上行链路初始化</span></div>
+      <span class="text-[#3b494c]">|</span><span id="latency">延迟: --ms</span>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    let currentAct = "stop";
+    let heartbeat = null;
+
+    function log(msg, color = "text-[#dfe2eb]") {
+      const line = document.createElement("div");
+      const t = new Date().toTimeString().slice(0, 8);
+      line.className = "flex gap-2";
+      line.innerHTML = '<span class="text-[#bac9cc] opacity-50">[' + t + ']</span><span class="' + color + '">' + msg + "</span>";
+      logEl.prepend(line);
+      while (logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
+    }
+
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => { if (currentAct !== "stop") sendMotor(currentAct); }, 150);
+    }
+    function stopMove() {
+      currentAct = "stop";
+      clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+    function bindHoldButton(id, action) {
+      const btn = $(id);
+      btn.addEventListener("mousedown", () => startMove(action));
+      btn.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      btn.addEventListener("mouseup", stopMove);
+      btn.addEventListener("mouseleave", stopMove);
+      btn.addEventListener("touchend", stopMove);
+      btn.addEventListener("touchcancel", stopMove);
+    }
+
+    function applyStatus(d) {
+      $("robot-state").textContent = d.state || "-";
+      $("det-fps").textContent = d.fps != null ? String(d.fps) : "-";
+      $("top-fps").textContent = (d.fps != null ? d.fps : "--") + " 帧率";
+      $("mute-state").textContent = d.muted ? "ON" : "OFF";
+      $("backend-label").textContent = "后端: " + (d.backend_selected || "-") + "/" + (d.backend_effective || "-");
+      $("ai-state-banner").textContent = "状态: " + (d.state || "unknown");
+      if (d.face) {
+        $("face-name").textContent = d.face.name || "-";
+        $("face-score").textContent = d.face.score != null ? Number(d.face.score).toFixed(2) : "-";
+        $("emotion-pill").textContent = "情绪: " + (d.face.emotion || "-");
+      } else {
+        $("face-name").textContent = "无";
+        $("face-score").textContent = "-";
+      }
+      if (d.esp32) {
+        $("radar-dist").textContent = d.esp32.radar_dist ?? "-";
+        $("radar-energy").textContent = d.esp32.radar_energy ?? "-";
+        $("ax").textContent = d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "-";
+        $("ay").textContent = d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "-";
+        $("az").textContent = d.esp32.az != null ? Number(d.esp32.az).toFixed(2) : "-";
+      }
+    }
+
+    function connectSSE() {
+      const es = new EventSource("/status");
+      es.onopen = () => {
+        $("sse-dot").classList.remove("bg-[#ffb4ab]");
+        $("sse-dot").classList.add("bg-[#00daf3]");
+        $("sse-label").textContent = "SSE 已连接";
+        $("uplink-dot").classList.remove("bg-[#ffb4ab]");
+        $("uplink-dot").classList.add("bg-[#00daf3]");
+        $("uplink-text").textContent = "上行链路激活";
+        log("SSE /status 连接成功", "text-[#00daf3]");
+      };
+      es.onmessage = (e) => {
+        try { applyStatus(JSON.parse(e.data)); } catch (_) {}
+      };
+      es.onerror = () => {
+        $("sse-dot").classList.remove("bg-[#00daf3]");
+        $("sse-dot").classList.add("bg-[#ffb4ab]");
+        $("sse-label").textContent = "SSE 重连中...";
+      };
+    }
+
+    async function pollState() {
+      try {
+        const t0 = performance.now();
+        const res = await fetch("/api/v1/app/state");
+        const json = await res.json();
+        $("latency").textContent = "延迟: " + Math.max(1, Math.round(performance.now() - t0)) + "ms";
+        if (json && json.status) applyStatus(json.status);
+      } catch (_) {}
+    }
+
+    function initClock() {
+      const tick = () => { $("clock").textContent = new Date().toTimeString().slice(0, 8); };
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    function initControls() {
+      bindHoldButton("btn-forward", "forward");
+      bindHoldButton("btn-backward", "backward");
+      bindHoldButton("btn-left", "left");
+      bindHoldButton("btn-right", "right");
+      $("btn-stop").addEventListener("click", stopMove);
+
+      $("speed-range").addEventListener("input", (e) => { $("speed-value").textContent = e.target.value; });
+      $("speed-range").addEventListener("change", (e) => {
+        const v = Math.max(0, Math.min(255, Math.round(Number(e.target.value) * 2.55)));
+        sendMotor("speed:" + v);
+        log("设置速度: " + v, "text-[#fbbbff]");
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.repeat) return;
+        if (e.key === "w") startMove("forward");
+        else if (e.key === "s") startMove("backward");
+        else if (e.key === "a") startMove("left");
+        else if (e.key === "d") startMove("right");
+        else if (e.key === " ") stopMove();
+      });
+      window.addEventListener("keyup", (e) => {
+        if (["w", "a", "s", "d", " "].includes(e.key)) stopMove();
+      });
+    }
+
+    initClock();
+    initControls();
+    connectSSE();
+    pollState();
+    setInterval(pollState, 1200);
+    log("控制台已加载，等待机器人状态...", "text-[#dfe2eb]");
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STAR GEM | 机器人控制后台</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-surface": "#dfe2eb",
+            "inverse-surface": "#dfe2eb",
+            "on-secondary-fixed": "#001945",
+            "tertiary-fixed-dim": "#f8acff",
+            "outline": "#849396",
+            "on-tertiary-fixed": "#350040",
+            "surface-dim": "#10141a",
+            "surface-container-lowest": "#0a0e14",
+            "secondary-container": "#0068ed",
+            "primary-container": "#00e5ff",
+            "surface-container-high": "#262a31",
+            "surface": "#10141a",
+            "surface-container-low": "#181c22",
+            "on-tertiary-fixed-variant": "#7b0090",
+            "on-surface-variant": "#bac9cc",
+            "on-primary-fixed": "#001f24",
+            "on-primary-container": "#00626e",
+            "on-secondary-container": "#f2f3ff",
+            "inverse-primary": "#006875",
+            "tertiary": "#ffe5fc",
+            "secondary": "#b0c6ff",
+            "surface-tint": "#00daf3",
+            "primary-fixed": "#9cf0ff",
+            "surface-bright": "#353940",
+            "secondary-fixed": "#d9e2ff",
+            "error": "#ffb4ab",
+            "on-secondary": "#002d6e",
+            "on-error-container": "#ffdad6",
+            "on-primary-fixed-variant": "#004f58",
+            "tertiary-fixed": "#ffd6ff",
+            "inverse-on-surface": "#2d3137",
+            "outline-variant": "#3b494c",
+            "background": "#10141a",
+            "on-tertiary-container": "#9800b3",
+            "error-container": "#93000a",
+            "on-secondary-fixed-variant": "#00429b",
+            "on-background": "#dfe2eb",
+            "surface-variant": "#31353c",
+            "on-primary": "#00363d",
+            "on-tertiary": "#570067",
+            "primary": "#c3f5ff",
+            "surface-container": "#1c2026",
+            "on-error": "#690005",
+            "secondary-fixed-dim": "#b0c6ff",
+            "surface-container-highest": "#31353c",
+            "tertiary-container": "#fbbbff",
+            "primary-fixed-dim": "#00daf3"
+          },
+          fontFamily: {
+            "headline": ["Space Grotesk"],
+            "body": ["Space Grotesk"],
+            "label": ["Space Grotesk"]
+          },
+          borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }
+        }
+      }
+    };
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-panel {
+      background: rgba(24, 28, 34, 0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(49, 53, 60, 0.3);
+    }
+    .neon-border-active {
+      border-color: #00daf3;
+      box-shadow: 0 0 10px rgba(0, 218, 243, 0.4);
+    }
+    body {
+      background-color: #10141a;
+      color: #dfe2eb;
+      font-family: 'Space Grotesk', sans-serif;
+      overflow: hidden;
+    }
+    .radar-sweep {
+      background: conic-gradient(from 0deg, rgba(0, 218, 243, 0.2) 0%, transparent 25%);
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #31353c; border-radius: 10px; }
+    @keyframes pulse-wave {
+      0% { stroke-dashoffset: 400; }
+      100% { stroke-dashoffset: 0; }
+    }
+    .ecg-line { stroke-dasharray: 400; animation: pulse-wave 4s linear infinite; }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+  <header class="bg-[#10141a]/80 backdrop-blur-xl border-b border-[#31353c]/20 shadow-[0_4px_20px_rgba(0,0,0,0.4)] fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 tracking-tight">
+    <div class="flex items-center gap-4">
+      <span class="text-2xl font-bold tracking-tighter text-[#00daf3] drop-shadow-[0_0_8px_rgba(0,218,243,0.3)]">STAR GEM</span>
+      <div class="hidden md:flex gap-6 ml-8">
+        <a class="text-[#00daf3] border-b-2 border-[#00daf3] pb-1" href="#">云端同步</a>
+        <a class="text-[#bac9cc]" href="#">本地模式</a>
+        <a class="text-[#bac9cc]" href="#">音频设置</a>
+      </div>
+    </div>
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2 px-3 py-1 rounded bg-surface-container-high border border-outline-variant/20">
+        <span class="material-symbols-outlined text-xs text-[#00daf3]" style="font-variation-settings: 'FILL' 1;">speed</span>
+        <span id="top-fps" class="text-[10px] font-bold uppercase tracking-widest text-[#00daf3]">-- 帧率</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[#bac9cc]">schedule</span>
+        <span id="clock" class="text-xs font-mono text-[#bac9cc]">--:--:--</span>
+      </div>
+      <div class="w-8 h-8 rounded-full border border-[#00daf3]/50 overflow-hidden">
+        <img class="w-full h-full object-cover" alt="avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoaknwXQ2ys-HJ3eHmTxEjUL5ojxV2UqhNJXGi44_7nGi_Yi7NxKVfgXMTHJNmgCwuwlHERvo04XdYc0Zb6coHep6mn8Itg9UaO3FHh6V4F28yIdgEe6PxlvDNZGGbMgfmVi6WmDgSHDBiQmSVb_ijz7RfU8ge6st5XjnLU-LIVvnWTPkjqkmtFSmKu4N6Ra4z_L3T2oMtRwkK3lvo84niPqKSM6fsSqX3e31pPUct8VLB6wUq7T1q_jVt5vMWmW_EmeRmR2gqcQ" />
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 flex pt-20 pb-10 px-6 gap-6 overflow-hidden">
+    <nav class="bg-[#181c22]/60 backdrop-blur-2xl w-20 rounded-xl border border-[#31353c]/30 shadow-[10px_0_30px_rgba(0,0,0,0.5)] flex flex-col items-center py-8 gap-6 uppercase text-xs font-bold">
+      <div class="flex flex-col items-center gap-1 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/30">
+          <span class="material-symbols-outlined text-primary">robot_2</span>
+        </div>
+        <span class="text-[8px] text-primary">单位-01</span>
+      </div>
+      <div class="flex flex-col gap-8 flex-1">
+        <button class="bg-[#00daf3]/10 text-[#00daf3] border-r-2 border-[#00daf3] p-3 flex flex-col items-center gap-1">
+          <span class="material-symbols-outlined">analytics</span>
+          <span class="scale-75">遥测</span>
+        </button>
+        <button class="text-[#bac9cc] opacity-60 p-3 flex flex-col items-center gap-1"><span class="material-symbols-outlined">settings_remote</span><span class="scale-75">电机</span></button>
+        <button class="text-[#bac9cc] opacity-60 p-3 flex flex-col items-center gap-1"><span class="material-symbols-outlined">radar</span><span class="scale-75">雷达</span></button>
+        <button class="text-[#bac9cc] opacity-60 p-3 flex flex-col items-center gap-1"><span class="material-symbols-outlined">terminal</span><span class="scale-75">日志</span></button>
+      </div>
+      <button class="mt-auto bg-error-container/20 border border-error/40 text-error p-2 rounded-lg"><span class="material-symbols-outlined">emergency_home</span></button>
+    </nav>
+
+    <div class="flex-1 flex flex-col gap-6 h-full">
+      <div class="flex-1 glass-panel rounded-xl overflow-hidden relative group neon-border-active">
+        <img id="video-feed" class="w-full h-full object-cover" alt="video feed" src="/api/v1/video/stream" />
+        <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-6">
+          <div class="flex justify-between items-start">
+            <div class="bg-black/40 backdrop-blur-md px-4 py-2 rounded border-l-2 border-[#00daf3]">
+              <div class="text-[10px] text-primary tracking-widest uppercase font-bold">主画面馈送</div>
+              <div class="text-xl font-mono text-white">摄像头_01_大厅</div>
+            </div>
+            <div class="flex flex-col gap-2 items-end">
+              <div id="ai-state-banner" class="bg-primary/20 text-primary text-[10px] px-2 py-1 rounded border border-primary/30">状态: waiting</div>
+              <div class="bg-black/40 backdrop-blur-md px-3 py-1 rounded border-r-2 border-primary">
+                <span id="emotion-pill" class="text-xs font-mono">情绪: -</span>
+              </div>
+            </div>
+          </div>
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-40">
+            <div class="w-20 h-20 border border-primary rounded-full relative">
+              <div class="absolute top-1/2 left-0 w-4 border-t border-primary"></div>
+              <div class="absolute top-1/2 right-0 w-4 border-t border-primary"></div>
+              <div class="absolute top-0 left-1/2 h-4 border-l border-primary"></div>
+              <div class="absolute bottom-0 left-1/2 h-4 border-l border-primary"></div>
+            </div>
+          </div>
+          <div class="flex justify-between items-end">
+            <div class="flex gap-4">
+              <div class="text-center"><div class="text-[8px] text-on-surface-variant uppercase">人脸</div><div id="face-name" class="text-sm font-mono text-white">-</div></div>
+              <div class="text-center"><div class="text-[8px] text-on-surface-variant uppercase">置信度</div><div id="face-score" class="text-sm font-mono text-white">-</div></div>
+            </div>
+            <div class="bg-black/60 backdrop-blur-md p-2 rounded-lg border border-outline-variant/30 flex gap-4 items-center">
+              <div class="flex items-center gap-2">
+                <div id="sse-dot" class="w-2 h-2 rounded-full bg-[#ffb4ab]"></div>
+                <span id="sse-label" class="text-[10px] uppercase font-bold tracking-widest">SSE 连接中...</span>
+              </div>
+              <div class="w-[1px] h-4 bg-outline-variant"></div>
+              <span id="backend-label" class="text-[10px] font-mono">后端: -</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="h-64 flex gap-6">
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-[10px] font-bold tracking-widest text-primary uppercase">LD2402 雷达</span>
+            <span class="material-symbols-outlined text-sm text-on-surface-variant">radar</span>
+          </div>
+          <div class="flex-1 relative flex items-center justify-center">
+            <div class="w-40 h-40 rounded-full border border-outline-variant/30 relative overflow-hidden">
+              <div class="absolute inset-0 border border-outline-variant/10 rounded-full scale-75"></div>
+              <div class="absolute inset-0 border border-outline-variant/10 rounded-full scale-50"></div>
+              <div class="absolute inset-0 radar-sweep"></div>
+              <div class="absolute top-1/3 left-1/2 w-1.5 h-1.5 bg-primary rounded-full shadow-[0_0_8px_#00daf3] animate-pulse"></div>
+            </div>
+          </div>
+          <div class="text-[10px] mt-2 text-on-surface-variant">距离: <span id="radar-dist">-</span> cm | 能量: <span id="radar-energy">-</span></div>
+        </div>
+
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-[10px] font-bold tracking-widest text-secondary uppercase">IMU 姿态</span>
+            <span class="material-symbols-outlined text-sm text-on-surface-variant">explore</span>
+          </div>
+          <div class="flex-1 flex items-center justify-center">
+            <div class="w-32 h-32 rounded-full border-2 border-secondary/20 relative rotate-12 flex items-center justify-center">
+              <div class="absolute w-full h-[1px] bg-secondary/40"></div>
+              <div class="absolute h-full w-[1px] bg-secondary/40"></div>
+              <div class="w-24 h-24 rounded-full border border-secondary/60 border-dashed animate-[spin_10s_linear_infinite]"></div>
+              <div class="absolute top-0 text-[8px] font-mono text-secondary">北</div>
+            </div>
+          </div>
+          <div class="text-[10px] mt-2 text-on-surface-variant">AX:<span id="ax">-</span> AY:<span id="ay">-</span> AZ:<span id="az">-</span></div>
+        </div>
+
+        <div class="glass-panel w-1/3 rounded-xl p-4 flex flex-col font-mono text-[10px] overflow-hidden">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[10px] font-bold tracking-widest text-on-surface-variant uppercase">事件日志</span>
+            <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+          </div>
+          <div id="event-log" class="flex-1 flex flex-col gap-1 overflow-y-auto pr-2 custom-scrollbar"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="w-72 flex flex-col gap-6">
+      <section class="glass-panel rounded-xl p-5">
+        <h3 class="text-xs font-bold uppercase tracking-widest text-[#00daf3] mb-4 flex items-center gap-2"><span class="material-symbols-outlined text-sm">sensors</span>传感器遥测</h3>
+        <div class="space-y-4">
+          <div class="flex justify-between items-end border-b border-outline-variant/10 pb-2">
+            <div><div class="text-[8px] text-on-surface-variant uppercase">状态</div><div id="robot-state" class="text-lg font-mono leading-none">waiting</div></div>
+          </div>
+          <div class="flex justify-between items-end border-b border-outline-variant/10 pb-2">
+            <div><div class="text-[8px] text-on-surface-variant uppercase">检测 FPS</div><div id="det-fps" class="text-lg font-mono leading-none">0</div></div>
+          </div>
+          <div class="flex justify-between items-end border-b border-outline-variant/10 pb-2">
+            <div><div class="text-[8px] text-on-surface-variant uppercase">静音</div><div id="mute-state" class="text-lg font-mono leading-none">未知</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass-panel rounded-xl p-5">
+        <h3 class="text-xs font-bold uppercase tracking-widest text-[#00daf3] mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-sm">settings_remote</span>电机控制</h3>
+        <div class="mb-8">
+          <div class="flex justify-between text-[10px] mb-2 uppercase font-mono">
+            <span>速度</span>
+            <span class="text-primary"><span id="speed-value">75</span>%</span>
+          </div>
+          <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full accent-cyan-400" />
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 max-w-[180px] mx-auto">
+          <div></div>
+          <button id="btn-forward" class="aspect-square glass-panel rounded-lg flex items-center justify-center hover:bg-primary/20"><span class="material-symbols-outlined text-primary">arrow_upward</span></button>
+          <div></div>
+          <button id="btn-left" class="aspect-square glass-panel rounded-lg flex items-center justify-center hover:bg-primary/20"><span class="material-symbols-outlined text-primary">arrow_back</span></button>
+          <button id="btn-stop" class="aspect-square bg-error/10 border border-error/50 rounded-lg flex items-center justify-center hover:bg-error/30"><span class="material-symbols-outlined text-error">stop</span></button>
+          <button id="btn-right" class="aspect-square glass-panel rounded-lg flex items-center justify-center hover:bg-primary/20"><span class="material-symbols-outlined text-primary">arrow_forward</span></button>
+          <div></div>
+          <button id="btn-backward" class="aspect-square glass-panel rounded-lg flex items-center justify-center hover:bg-primary/20"><span class="material-symbols-outlined text-primary">arrow_downward</span></button>
+          <div></div>
+        </div>
+      </section>
+
+      <section class="glass-panel rounded-xl p-5 flex-1 flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xs font-bold uppercase tracking-widest text-[#00daf3] flex items-center gap-2"><span class="material-symbols-outlined text-sm">monitor_heart</span>运动能量</h3>
+          <span id="energy-value" class="text-[10px] font-mono text-[#00daf3]">0</span>
+        </div>
+        <div class="flex-1 min-h-[80px] bg-surface-container-low rounded-lg border border-outline-variant/10 relative overflow-hidden flex items-center">
+          <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 200 60">
+            <path class="ecg-line" d="M0,30 L40,30 L45,20 L50,45 L55,10 L60,50 L65,30 L100,30 L105,25 L110,35 L115,20 L120,40 L125,30 L160,30 L165,15 L170,45 L175,5 L180,55 L185,30 L200,30" fill="none" stroke="#00daf3" stroke-width="1.5"></path>
+          </svg>
+          <div class="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-surface-container-low/80"></div>
+        </div>
+        <div class="mt-2 text-[8px] text-on-surface-variant uppercase flex justify-between">
+          <span>实时波动分析</span>
+          <span id="sync-state" class="animate-pulse text-[#00daf3]">数据同步中</span>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="bg-[#10141a]/90 backdrop-blur-md border-t border-[#00daf3]/10 fixed bottom-0 w-full h-8 flex items-center justify-between px-8 z-50 text-[10px] uppercase tracking-widest">
+    <div class="flex gap-6 items-center">
+      <span class="text-[#00daf3] font-mono">v2.4.0-稳定版</span>
+      <div class="flex gap-4 text-[#bac9cc]">
+        <span>WASD: 移动控制</span>
+        <span>空格: 刹车</span>
+        <span>Esc: 菜单</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-[#bac9cc]">
+      <div class="flex items-center gap-1">
+        <span id="uplink-dot" class="w-1.5 h-1.5 rounded-full bg-[#ffb4ab]"></span>
+        <span id="uplink-text">上行链路初始化</span>
+      </div>
+      <span class="text-outline-variant">|</span>
+      <span id="latency">延迟: --ms</span>
+    </div>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("event-log");
+    let heartbeat = null;
+    let currentAct = "stop";
+
+    function log(msg, color = "text-on-surface") {
+      const line = document.createElement("div");
+      line.className = "flex gap-2";
+      const t = new Date().toTimeString().slice(0, 8);
+      line.innerHTML = '<span class="text-on-surface-variant opacity-50">[' + t + ']</span><span class="' + color + '">' + msg + "</span>";
+      logEl.prepend(line);
+      while (logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
+    }
+
+    function sendMotor(action, durationMs = 0) {
+      const q = new URLSearchParams({ action });
+      if (durationMs > 0) q.set("duration_ms", String(durationMs));
+      fetch("/api/v1/control/motor?" + q.toString()).catch(() => {});
+    }
+
+    function startMove(action) {
+      currentAct = action;
+      sendMotor(action);
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = setInterval(() => {
+        if (currentAct !== "stop") sendMotor(currentAct);
+      }, 150);
+    }
+
+    function stopMove() {
+      currentAct = "stop";
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = null;
+      sendMotor("stop");
+    }
+
+    function bindHoldButton(id, action) {
+      const btn = $(id);
+      if (!btn) return;
+      btn.addEventListener("mousedown", () => startMove(action));
+      btn.addEventListener("touchstart", (e) => { e.preventDefault(); startMove(action); }, { passive: false });
+      btn.addEventListener("mouseup", stopMove);
+      btn.addEventListener("mouseleave", stopMove);
+      btn.addEventListener("touchend", stopMove);
+      btn.addEventListener("touchcancel", stopMove);
+    }
+
+    function applyStatus(d) {
+      $("robot-state").textContent = d.state || "-";
+      $("det-fps").textContent = d.fps != null ? String(d.fps) : "-";
+      $("top-fps").textContent = (d.fps != null ? d.fps : "--") + " 帧率";
+      $("mute-state").textContent = d.muted ? "ON" : "OFF";
+      $("backend-label").textContent = "后端: " + (d.backend_selected || "-") + "/" + (d.backend_effective || "-");
+      $("ai-state-banner").textContent = "状态: " + (d.state || "unknown");
+
+      if (d.face) {
+        $("face-name").textContent = d.face.name || "-";
+        $("face-score").textContent = d.face.score != null ? Number(d.face.score).toFixed(2) : "-";
+        $("emotion-pill").textContent = "情绪: " + (d.face.emotion || "-");
+      } else {
+        $("face-name").textContent = "无";
+        $("face-score").textContent = "-";
+      }
+
+      if (d.esp32) {
+        $("radar-dist").textContent = d.esp32.radar_dist != null ? d.esp32.radar_dist : "-";
+        $("radar-energy").textContent = d.esp32.radar_energy != null ? d.esp32.radar_energy : "-";
+        $("ax").textContent = d.esp32.ax != null ? Number(d.esp32.ax).toFixed(2) : "-";
+        $("ay").textContent = d.esp32.ay != null ? Number(d.esp32.ay).toFixed(2) : "-";
+        $("az").textContent = d.esp32.az != null ? Number(d.esp32.az).toFixed(2) : "-";
+        $("energy-value").textContent = d.esp32.radar_energy != null ? String(d.esp32.radar_energy) : "0";
+      }
+    }
+
+    function connectSSE() {
+      const es = new EventSource("/status");
+      es.onopen = () => {
+        $("sse-dot").classList.remove("bg-[#ffb4ab]");
+        $("sse-dot").classList.add("bg-[#00daf3]");
+        $("sse-label").textContent = "SSE 已连接";
+        $("uplink-dot").classList.remove("bg-[#ffb4ab]");
+        $("uplink-dot").classList.add("bg-[#00daf3]");
+        $("uplink-text").textContent = "上行链路激活";
+        log("SSE /status 连接成功", "text-primary");
+      };
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          applyStatus(data);
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        $("sse-dot").classList.remove("bg-[#00daf3]");
+        $("sse-dot").classList.add("bg-[#ffb4ab]");
+        $("sse-label").textContent = "SSE 重连中...";
+      };
+    }
+
+    async function pollState() {
+      try {
+        const t0 = performance.now();
+        const res = await fetch("/api/v1/app/state");
+        const json = await res.json();
+        const dt = Math.max(1, Math.round(performance.now() - t0));
+        $("latency").textContent = "延迟: " + dt + "ms";
+        if (json && json.status) applyStatus(json.status);
+      } catch (_) {}
+    }
+
+    function initClock() {
+      const tick = () => { $("clock").textContent = new Date().toTimeString().slice(0, 8); };
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    function initMotorControl() {
+      bindHoldButton("btn-forward", "forward");
+      bindHoldButton("btn-backward", "backward");
+      bindHoldButton("btn-left", "left");
+      bindHoldButton("btn-right", "right");
+      $("btn-stop").addEventListener("click", stopMove);
+
+      const speed = $("speed-range");
+      const speedValue = $("speed-value");
+      speed.addEventListener("input", () => { speedValue.textContent = speed.value; });
+      speed.addEventListener("change", () => {
+        const v = Math.max(0, Math.min(255, Math.round(Number(speed.value) * 2.55)));
+        sendMotor("speed:" + v);
+        log("设置速度: " + v, "text-tertiary");
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.repeat) return;
+        if (e.key === "w") startMove("forward");
+        else if (e.key === "s") startMove("backward");
+        else if (e.key === "a") startMove("left");
+        else if (e.key === "d") startMove("right");
+        else if (e.key === " ") stopMove();
+      });
+      window.addEventListener("keyup", (e) => {
+        if (["w", "a", "s", "d", " "].includes(e.key)) stopMove();
+      });
+    }
+
+    initClock();
+    initMotorControl();
+    connectSSE();
+    pollState();
+    setInterval(pollState, 1200);
+    log("控制台已加载，等待机器人状态...", "text-on-surface");
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
