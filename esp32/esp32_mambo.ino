@@ -1,5 +1,5 @@
 // ESP32-S3 Mambo 机器人控制器
-// 外设: LD2402雷达(Serial2), L298N电机, MPU6050陀螺仪, 3x红外跌落检测
+// 外设: LD2402雷达(Serial2), L298N电机, MPU6050陀螺仪, 2x红外跌落(前/后)
 // 串口: Serial(USB调试) / Serial1(香橙派通信 RX=16 TX=17) / Serial2(LD2402 RX=18 TX=19)
 
 #include <Wire.h>
@@ -10,7 +10,9 @@
 const int SDA_PIN = 8,  SCL_PIN = 9;
 const int RX_PIN  = 16, TX_PIN  = 17;
 const int RADAR_RX = 18, RADAR_TX = 19;
-const int CLIFF_L = 5, CLIFF_M = 6, CLIFF_R = 7;
+// 前侧悬崖 / 后侧悬崖（INPUT_PULLDOWN，悬空或触发为高则视为跌落）
+const int CLIFF_FRONT = 5;
+const int CLIFF_BACK  = 6;
 const int ENA = 10, IN1 = 11, IN2 = 12, IN3 = 13, IN4 = 14, ENB = 15;
 
 // ================= 全局变量 =================
@@ -24,8 +26,12 @@ const unsigned long CMD_TIMEOUT = 300;
 int    motor_speed    = 220;
 String current_action = "stop";
 
+// 若你的车体“前后装反”或电机方向与定义相反，可打开此开关把 forward/backward 对调
+const bool kSwapForwardBackward = true;
+
 // 警报只触发一次的标志（离开触发条件后自动重置）
-bool cliff_alerted    = false;
+bool cliff_front_alerted = false;
+bool cliff_back_alerted  = false;
 bool fall_alerted     = false;
 bool agitated_alerted = false;
 
@@ -145,23 +151,35 @@ void setMotor(int l1, int l2, int r1, int r2, int s) {
     digitalWrite(IN3, r1); digitalWrite(IN4, r2); analogWrite(ENB, s);
 }
 
-bool isSafe() {
-    return !(digitalRead(CLIFF_L) || digitalRead(CLIFF_M) || digitalRead(CLIFF_R));
-}
+inline void driveForward(int s)  { if (!kSwapForwardBackward) setMotor(1, 0, 1, 0, s); else setMotor(0, 1, 0, 1, s); }
+inline void driveBackward(int s) { if (!kSwapForwardBackward) setMotor(0, 1, 0, 1, s); else setMotor(1, 0, 1, 0, s); }
+
+/** 前红外：朝前运动（前、左转、右转）时禁止前进方向落空 */
+inline bool cliffFront() { return digitalRead(CLIFF_FRONT); }
+/** 后红外：倒车时禁止后轮侧落空 */
+inline bool cliffBack() { return digitalRead(CLIFF_BACK); }
+/** 任一侧触发则上报 cliff=1（上位机/UI） */
+inline bool anyCliff() { return cliffFront() || cliffBack(); }
 
 void handleCommand(String cmd) {
     cmd.trim();
     if (cmd.length() == 0) return;
     if (cmd != "stop") last_cmd_time = millis();
 
-    if (!isSafe() && (cmd == "forward" || cmd == "left" || cmd == "right")) {
+    if (cliffFront() && (cmd == "forward" || cmd == "left" || cmd == "right")) {
         setMotor(0, 0, 0, 0, 0);
         current_action = "blocked";
         return;
     }
 
-    if      (cmd == "forward")  { setMotor(1, 0, 1, 0, motor_speed); current_action = "forward"; }
-    else if (cmd == "backward") { setMotor(0, 1, 0, 1, motor_speed); current_action = "backward"; }
+    if (cliffBack() && cmd == "backward") {
+        setMotor(0, 0, 0, 0, 0);
+        current_action = "blocked";
+        return;
+    }
+
+    if      (cmd == "forward")  { driveForward(motor_speed);  current_action = "forward"; }
+    else if (cmd == "backward") { driveBackward(motor_speed); current_action = "backward"; }
     else if (cmd == "left")     { setMotor(0, 1, 1, 0, motor_speed); current_action = "left"; }
     else if (cmd == "right")    { setMotor(1, 0, 0, 1, motor_speed); current_action = "right"; }
     else if (cmd == "stop")     { setMotor(0, 0, 0, 0, 0);           current_action = "stop"; }
@@ -211,9 +229,8 @@ void setup() {
     Serial.println(Wire.endTransmission() == 0 ? "[OK] MPU6050" : "[FAIL] MPU6050");
 
     // 引脚
-    pinMode(CLIFF_L, INPUT_PULLDOWN);
-    pinMode(CLIFF_M, INPUT_PULLDOWN);
-    pinMode(CLIFF_R, INPUT_PULLDOWN);
+    pinMode(CLIFF_FRONT, INPUT_PULLDOWN);
+    pinMode(CLIFF_BACK, INPUT_PULLDOWN);
     int motorPins[] = {ENA, IN1, IN2, IN3, IN4, ENB};
     for (int p : motorPins) pinMode(p, OUTPUT);
     setMotor(0, 0, 0, 0, 0);
@@ -237,7 +254,7 @@ void loop() {
     // 悬崖检测
     if (cliff_back_until > 0) {
         if (now_ms < cliff_back_until) {
-            setMotor(0, 1, 0, 1, motor_speed);
+            driveBackward(motor_speed);
             current_action = "emergency_back";
             last_cmd_time  = now_ms;
         } else {
@@ -245,15 +262,24 @@ void loop() {
             current_action   = "stop";
             cliff_back_until = 0;
         }
-    } else if (!isSafe() && !cliff_alerted) {
+    } else if (cliffFront() && !cliff_front_alerted) {
+        // 前侧悬空：短时后退脱离边沿
         cliff_back_until = now_ms + CLIFF_BACK_MS;
-        cliff_alerted    = true;
-        pending_alert    = "cliff";
+        cliff_front_alerted = true;
+        pending_alert       = "cliff";
         setMotor(0, 1, 0, 1, motor_speed);
         current_action = "emergency_back";
         last_cmd_time  = now_ms;
+    } else if (cliffBack() && !cliff_back_alerted) {
+        // 后侧悬空：切勿继续倒车，立即停车并报警
+        cliff_back_alerted = true;
+        pending_alert      = "cliff";
+        setMotor(0, 0, 0, 0, 0);
+        current_action = "stop";
+        last_cmd_time  = now_ms;
     }
-    if (isSafe()) cliff_alerted = false;
+    if (!cliffFront()) cliff_front_alerted = false;
+    if (!cliffBack()) cliff_back_alerted = false;
 
     // 读 LD2402 文本数据
     ldReadSerial();
@@ -311,14 +337,15 @@ void loop() {
     // 定时上报（400ms）
     if (now_ms - last_send_time > 400) {
         last_send_time = now_ms;
-        bool  cliff = !isSafe();
+        bool cliff = anyCliff();
 
         // USB 调试打印
         Serial.printf("A=[%.2f,%.2f,%.2f]g G=[%.1f,%.1f,%.1f]dps | "
-                      "悬崖=%s 动作=%s | LD2402: dist=%dcm std=%.1f\n",
+                      "悬崖前=%s后=%s 动作=%s | LD2402: dist=%dcm std=%.1f\n",
                       ax_g, ay_g, az_g,
                       gx_d, gy_d, gz_d,
-                      cliff ? "是" : "否",
+                      cliffFront() ? "是" : "否",
+                      cliffBack() ? "是" : "否",
                       current_action.c_str(),
                       (int)radar_data.dist_cm,
                       radar_data.dist_std);

@@ -3,6 +3,7 @@
 #include "web_server.hpp"
 #include "vision_engine.hpp"
 #include "dialog_system.hpp"
+#include "../third_party/json.hpp"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
 #include <thread>
@@ -10,20 +11,61 @@
 #include <atomic>
 #include <chrono>
 #include <iomanip>
+#include <ctime>
 #include <iostream>
 #include <cstdio>
+#include <fstream>
 #include <csignal>
 #include <cmath>
 #include <cctype>
 #include <sstream>
 #include <vector>
+#include <deque>
 #include <utility>
+#include <filesystem>
+#include <set>
+#include <unordered_map>
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/wait.h>
 
 static std::atomic<bool> g_shutdown{false};
 static void sigHandler(int) { g_shutdown = true; }
+
+namespace {
+constexpr const char* kObjectLibraryPath = "./data/object_library.json";
+constexpr int         kRenYoloClassId    = 0;  // kClassNames[0] == "Ren"
+constexpr float       kObjectLibraryMinProb = 0.30f;
+
+void LoadObjectLibraryFromFile(std::unordered_map<int, int>& counts) {
+    std::ifstream ifs(kObjectLibraryPath);
+    if (!ifs) return;
+    try {
+        std::ostringstream ss;
+        ss << ifs.rdbuf();
+        const std::string raw = ss.str();
+        if (raw.empty()) return;
+        nlohmann::json j = nlohmann::json::parse(raw);
+        if (!j.contains("counts") || !j["counts"].is_object()) return;
+        for (auto it = j["counts"].begin(); it != j["counts"].end(); ++it) {
+            int id = std::stoi(it.key());
+            if (it.value().is_number_integer())
+                counts[id] = it.value().get<int>();
+        }
+    } catch (...) {}
+}
+
+void SaveObjectLibraryToFile(const std::unordered_map<int, int>& counts) {
+    try { std::filesystem::create_directories("./data"); } catch (...) {}
+    try {
+        nlohmann::json j;
+        j["counts"] = nlohmann::json::object();
+        for (const auto& p : counts) j["counts"][std::to_string(p.first)] = p.second;
+        std::ofstream ofs(kObjectLibraryPath, std::ios::trunc);
+        if (ofs) ofs << j.dump(2);
+    } catch (...) {}
+}
+}  // namespace
 
 static int ExtractPercentFromAmixer(const std::string& text) {
     for (size_t i = 0; i < text.size(); ++i) {
@@ -434,6 +476,18 @@ int main() {
     });
     web.SetDiagBaiduDeepseekHandler([&dialog]() { return dialog.RunBaiduDeepseekDiagJson(); });
     web.SetClearMemoryHandler([&dialog]() { return dialog.ClearConversationMemoryJson(); });
+    web.SetVoiceParamsHandler([&dialog](const std::string& body) { return dialog.HandleVoiceParamsHttp(body); });
+    web.SetPersonaConfigHandler([&dialog](const std::string& body) { return dialog.HandlePersonaConfigHttp(body); });
+    web.SetTypedDialogHandler([&dialog](const std::string& body) { return dialog.HandleTypedDialogHttp(body); });
+    std::mutex object_lib_mtx;
+    std::unordered_map<int, int> object_library_counts;
+    LoadObjectLibraryFromFile(object_library_counts);
+    web.SetObjectLibraryResetHandler([&]() {
+        std::lock_guard<std::mutex> lk(object_lib_mtx);
+        object_library_counts.clear();
+        SaveObjectLibraryToFile(object_library_counts);
+        return std::string("{\"ok\":true}");
+    });
     web.SetMotionModeHandler([&](const std::string& name, const std::string& value) -> std::string {
         auto to_lower = [](std::string s) {
             std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return (char)std::tolower(c); });
@@ -457,7 +511,7 @@ int main() {
         return oss.str();
     });
     dialog.Start();
-    std::cerr << "[Console] 输入 `1`(local) / `2`(baidu) / `toggle` 一键切换 ASR+LLM+TTS 后端；输入 `backend ?` 查看当前。\n";
+    std::cerr << "[Console] 输入 `1`/`2`/`toggle` 切换后端；`backend ?` 查看当前。\n";
 
     // 警报 TTS 播放（异步，不阻塞主循环）
     auto playAlert = [&dialog](const std::string& text) { dialog.PlayAlertTts(text); };
@@ -502,23 +556,32 @@ int main() {
         auto last_reopen = std::chrono::steady_clock::now() - std::chrono::seconds(5);
         while (running) {
             cv::Mat frame;
-            cap >> frame;
+            try {
+                cap >> frame;
+            } catch (...) {
+                frame.release();
+            }
             if (frame.empty()) {
                 ++empty_count;
                 // 连续空帧说明 /dev/video0 卡住，尝试重开摄像头恢复推流
-                if (empty_count >= 20 &&
+                if (empty_count >= 8 &&
                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - last_reopen).count() > 1500) {
+                        std::chrono::steady_clock::now() - last_reopen).count() > 800) {
                     last_reopen = std::chrono::steady_clock::now();
                     std::cerr << "[Camera] 捕获空帧，尝试重新打开 /dev/video" << mambo::AppConfig::kCameraIndex << "...\n";
                     if (open_camera()) {
                         std::cerr << "[Camera] 摄像头恢复成功\n";
                         empty_count = 0;
+                        // warmup：丢弃几帧，避免恢复瞬间第一帧异常
+                        for (int i = 0; i < 3; i++) {
+                            cv::Mat tmp;
+                            try { cap >> tmp; } catch (...) {}
+                        }
                     } else {
                         std::cerr << "[Camera] 摄像头恢复失败，稍后重试\n";
                     }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
                 continue;
             }
             empty_count = 0;
@@ -541,6 +604,8 @@ int main() {
         float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
         float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
         auto t0 = std::chrono::steady_clock::now();
+        constexpr int kObjectRate = 5; // 物品识别刷新率：每 5 帧更新一次（可调）
+        constexpr int kFaceRate = 15;  // 人脸/情绪刷新率：每 15 帧更新一次（保持体验）
         while (running) {
             cv::Mat frame;
             int fw, fh;
@@ -590,14 +655,26 @@ int main() {
 
             std::vector<mambo::ObjectResult> objects;
             std::vector<mambo::FaceResult>   faces;
-            if (frame_count % 15 == 0)
-                vision.ProcessFrame(frame, objects, faces, frame_count);
+
+            // 物品：高频（只跑 YOLO）
+            if (frame_count % kObjectRate == 0) {
+                vision.ProcessObjects(frame, objects);
+            }
+
+            // 人脸/情绪：低频（只跑脸，不再重复 YOLO）
+            if (frame_count % kFaceRate == 0) {
+                vision.ProcessFaces(frame, faces, frame_count);
+            }
 
             {
                 std::lock_guard<std::mutex> lk(data_mtx);
-                if (frame_count % 15 == 0) {
+                // 物品更新
+                if (frame_count % kObjectRate == 0) {
                     slow_objects = objects;
-                    slow_faces   = faces;
+                }
+                // 人脸/情绪更新
+                if (frame_count % kFaceRate == 0) {
+                    slow_faces = faces;
                     if (!faces.empty()) dialog.SetCurrentEmotion(faces[0].emotion);
                 }
             }
@@ -611,9 +688,56 @@ int main() {
 
     // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
+    auto last_object_lib_disk_save = std::chrono::steady_clock::now() - std::chrono::hours(1);
     auto last_fall_alert = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     auto last_auto_drive = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     std::string auto_drive_last_cmd = "stop";
+    auto last_scissors_alarm = std::chrono::steady_clock::now() - std::chrono::seconds(30);
+
+    struct AlertEvent {
+        std::string ts;
+        std::string reason;
+        std::string detail;
+        std::string evidence_dir;
+    };
+    std::deque<AlertEvent> recent_alert_events;
+    auto push_alert_event = [&](const AlertEvent& e) {
+        recent_alert_events.push_back(e);
+        while (recent_alert_events.size() > 40) recent_alert_events.pop_front();
+    };
+    auto now_ts_compact = []() -> std::string {
+        auto t = std::time(nullptr);
+        std::tm tmv{};
+#if defined(_WIN32)
+        localtime_s(&tmv, &t);
+#else
+        localtime_r(&t, &tmv);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y%m%d_%H%M%S", &tmv);
+        return buf;
+    };
+    auto now_ts_readable = []() -> std::string {
+        auto t = std::time(nullptr);
+        std::tm tmv{};
+#if defined(_WIN32)
+        localtime_s(&tmv, &t);
+#else
+        localtime_r(&t, &tmv);
+#endif
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
+        return buf;
+    };
+
+    struct EvidenceCapture {
+        bool active = false;
+        std::string reason;
+        std::string dir;
+        std::chrono::steady_clock::time_point end_at;
+        std::chrono::steady_clock::time_point last_shot;
+        int saved_count = 0;
+    } evidence;
 
     while (!g_shutdown) {
         cv::Rect box; bool hf; int fw, fh;
@@ -627,6 +751,86 @@ int main() {
             faces   = slow_faces;
             fw      = latest_frame_w;
             fh      = latest_frame_h;
+        }
+
+        bool scissors_detected = false;
+        float scissors_prob = 0.0f;
+        for (const auto& o : objects) {
+            if (o.label < 0 || o.label >= (int)mambo::kClassNames.size()) continue;
+            const std::string& name = mambo::kClassNames[o.label];
+            if (name == "JianDao" || name == "scissors" || name == "Scissors") {
+                scissors_detected = true;
+                scissors_prob = std::max(scissors_prob, o.prob);
+            }
+        }
+
+        // 识别到剪刀：告警 + 启动约10秒证据抓拍
+        const auto now_wall = std::chrono::steady_clock::now();
+        if (scissors_detected &&
+            std::chrono::duration_cast<std::chrono::milliseconds>(now_wall - last_scissors_alarm).count() > 15000) {
+            last_scissors_alarm = now_wall;
+            const std::string ts_compact = now_ts_compact();
+            const std::string reason = "检测到剪刀（危险物品）";
+            const std::string detail = "置信度 " + std::to_string((int)std::round(scissors_prob * 100)) + "%";
+            const std::string dir = "./data/alerts/" + ts_compact + "_scissors";
+            try { std::filesystem::create_directories(dir); } catch (...) {}
+            evidence.active = true;
+            evidence.reason = reason;
+            evidence.dir = dir;
+            evidence.end_at = now_wall + std::chrono::seconds(10);
+            evidence.last_shot = now_wall;
+            evidence.saved_count = 0;
+
+            // 立即保存“第一帧”证据图（保证后续10秒从识别瞬间开始）
+            cv::Mat first;
+            {
+                std::lock_guard<std::mutex> lk(cap_mtx);
+                if (!shared_frame.empty()) shared_frame.copyTo(first);
+            }
+            if (!first.empty()) {
+                try {
+                    std::ostringstream fn;
+                    fn << evidence.dir << "/img_" << std::setw(3) << std::setfill('0') << evidence.saved_count << ".jpg";
+                    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 90};
+                    cv::imwrite(fn.str(), first, params);
+                    evidence.saved_count = 1;
+                } catch (...) {}
+            }
+            push_alert_event({now_ts_readable(), reason, detail, dir});
+            playAlert("警告，检测到剪刀，请注意安全。");
+        }
+
+        // 告警证据抓拍：10秒内每500ms保存一帧图片
+        if (evidence.active) {
+            if (now_wall >= evidence.end_at) {
+                std::ostringstream meta;
+                meta << "{"
+                     << "\"timestamp\":\"" << now_ts_readable() << "\","
+                     << "\"reason\":\"" << evidence.reason << "\","
+                     << "\"saved_images\":" << evidence.saved_count
+                     << "}";
+                try {
+                    std::ofstream mf(evidence.dir + "/meta.json", std::ios::out | std::ios::trunc);
+                    mf << meta.str();
+                } catch (...) {}
+                evidence.active = false;
+            } else if (std::chrono::duration_cast<std::chrono::milliseconds>(now_wall - evidence.last_shot).count() >= 500) {
+                evidence.last_shot = now_wall;
+                cv::Mat snap;
+                {
+                    std::lock_guard<std::mutex> lk(cap_mtx);
+                    if (!shared_frame.empty()) shared_frame.copyTo(snap);
+                }
+                if (!snap.empty()) {
+                    std::ostringstream fn;
+                    fn << evidence.dir << "/img_" << std::setw(3) << std::setfill('0') << evidence.saved_count << ".jpg";
+                    try {
+                        std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 90};
+                        cv::imwrite(fn.str(), snap, params);
+                        evidence.saved_count++;
+                    } catch (...) {}
+                }
+            }
         }
 
         mambo::ChatState state = dialog.GetState();
@@ -717,6 +921,30 @@ int main() {
             std::string ss = (state == mambo::ChatState::kWaiting  ? "waiting"   :
                               state == mambo::ChatState::kListening ? "listening" :
                               state == mambo::ChatState::kThinking  ? "thinking"  : "speaking");
+
+            // 物品库：每秒对「当前帧中」每个非人类别（置信度足够）各计 1 次，避免逐帧爆炸增长
+            std::set<int> lib_seen_this_tick;
+            for (const auto& o : objects) {
+                if (o.label == kRenYoloClassId) continue;
+                if (o.label < 0 || o.label >= (int)mambo::kClassNames.size()) continue;
+                if (o.prob < kObjectLibraryMinProb) continue;
+                lib_seen_this_tick.insert(o.label);
+            }
+            bool object_lib_changed = false;
+            {
+                std::lock_guard<std::mutex> lk(object_lib_mtx);
+                for (int lb : lib_seen_this_tick) {
+                    object_library_counts[lb]++;
+                    object_lib_changed = true;
+                }
+            }
+            if (object_lib_changed &&
+                std::chrono::duration_cast<std::chrono::milliseconds>(now - last_object_lib_disk_save).count() >= 5000) {
+                last_object_lib_disk_save = now;
+                std::lock_guard<std::mutex> lk(object_lib_mtx);
+                SaveObjectLibraryToFile(object_library_counts);
+            }
+
             // 构建 status JSON
             std::string json = "{";
             json += "\"fps\":" + std::to_string(det_fps.load());
@@ -733,6 +961,12 @@ int main() {
             json += ",\"auto_obstacle_enabled\":" + std::string(auto_obstacle_enabled.load() ? "true" : "false");
             json += ",\"follow_mode_enabled\":" + std::string(follow_mode_enabled.load() ? "true" : "false");
             json += ",\"dialog_turn_count\":" + std::to_string(dialog.GetDialogTurnCount());
+            json += ",\"mic_rms\":" + std::to_string(dialog.GetMicRms());
+            json += ",\"voice_threshold\":" + std::to_string(dialog.GetVoiceThreshold());
+            json += ",\"silence_threshold\":" + std::to_string(dialog.GetSilenceThreshold());
+            json += ",\"silence_limit_ms\":" + std::to_string(dialog.GetSilenceLimitMs());
+            json += ",\"persona_preset\":\"" + std::string(dialog.GetPersonaPresetId()) + "\"";
+            json += ",\"llm_max_tokens\":" + std::to_string(dialog.GetLlmMaxTokens());
             if (!faces.empty()) {
                 char buf[128];
                 snprintf(buf, sizeof(buf), ",\"face\":{\"name\":\"%s\",\"emotion\":\"%s\",\"score\":%.2f}",
@@ -750,6 +984,38 @@ int main() {
                 json += buf;
             }
             json += "]";
+            json += ",\"object_library\":[";
+            {
+                std::vector<std::pair<int, int>> lib_items;
+                std::lock_guard<std::mutex> lk(object_lib_mtx);
+                lib_items.reserve(object_library_counts.size());
+                for (const auto& p : object_library_counts) lib_items.push_back({p.second, p.first});
+                std::sort(lib_items.begin(), lib_items.end(), [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                    if (a.first != b.first) return a.first > b.first;
+                    return a.second < b.second;
+                });
+                bool ol_first = true;
+                for (const auto& pr : lib_items) {
+                    if (!ol_first) json += ",";
+                    ol_first = false;
+                    int cnt = pr.first;
+                    int lid = pr.second;
+                    json += "{\"id\":" + std::to_string(lid) + ",\"label\":\"" + mambo::kClassNames[lid] + "\",\"count\":" + std::to_string(cnt) + "}";
+                }
+            }
+            json += "]";
+            json += ",\"alert_events\":[";
+            for (size_t i = 0; i < recent_alert_events.size(); ++i) {
+                const auto& e = recent_alert_events[recent_alert_events.size() - 1 - i]; // 新的在前
+                if (i) json += ",";
+                std::string evidence_web_dir;
+                auto p = e.evidence_dir.find("alerts/");
+                if (p != std::string::npos) {
+                    evidence_web_dir = "/alerts/" + e.evidence_dir.substr(p + 7);
+                }
+                json += "{\"ts\":\"" + e.ts + "\",\"reason\":\"" + e.reason + "\",\"detail\":\"" + e.detail + "\",\"evidence_dir\":\"" + e.evidence_dir + "\",\"evidence_web_dir\":\"" + evidence_web_dir + "\"}";
+            }
+            json += "]";
             json += ",\"dialog_events\":" + dialog.GetRecentDialogEventsJson();
             std::string espStatus = serial.GetEsp32Status();
             if (!espStatus.empty()) json += ",\"esp32\":{" + espStatus + "}";
@@ -762,7 +1028,7 @@ int main() {
                       << "/" << dialog.GetBackendEffectiveName()
                       << "  静音:" << (dialog.IsMuted() ? "ON" : "OFF")
                       << "  🎤RMS:" << dialog.GetMicRms()
-                      << "(阈值:" << mambo::AppConfig::kVoiceThreshold << ")";
+                      << "(阈值:" << dialog.GetVoiceThreshold() << ")";
             if (!faces.empty())
                 std::cout << "  人脸:[" << faces[0].name << "|" << faces[0].emotion
                           << "|" << std::fixed << std::setprecision(2) << faces[0].score << "]";

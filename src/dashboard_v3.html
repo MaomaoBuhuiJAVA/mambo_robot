@@ -70,8 +70,8 @@
     }
     .gyro-3d-wrap { perspective: 700px; }
     .gyro-3d-shell {
-      width: 108px;
-      height: 108px;
+      width: 128px;
+      height: 128px;
       border-radius: 9999px;
       border: 1px solid rgba(253, 216, 53, 0.25);
       background: radial-gradient(circle at 30% 25%, rgba(253, 216, 53, 0.16), rgba(11, 12, 31, 0.2) 65%);
@@ -87,9 +87,9 @@
       transform-style: preserve-3d;
       transition: transform 140ms ease-out;
     }
-    .gyro-ring-x { width: 84px; height: 84px; margin-left: -42px; margin-top: -42px; transform: rotateX(75deg); }
-    .gyro-ring-y { width: 72px; height: 72px; margin-left: -36px; margin-top: -36px; transform: rotateY(75deg); }
-    .gyro-ring-z { width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; }
+    .gyro-ring-x { width: 100px; height: 100px; margin-left: -50px; margin-top: -50px; transform: rotateX(75deg); }
+    .gyro-ring-y { width: 86px; height: 86px; margin-left: -43px; margin-top: -43px; transform: rotateY(75deg); }
+    .gyro-ring-z { width: 66px; height: 66px; margin-left: -33px; margin-top: -33px; }
   </style>
 </head>
 <body class="h-screen flex">
@@ -105,10 +105,12 @@
       <p class="text-slate-400 text-xs mt-1">你的星空伙伴</p>
     </div>
     <nav class="flex-1 px-3 space-y-2">
-      <a class="flex items-center gap-3 bg-yellow-400/10 text-yellow-400 rounded-full px-4 py-3 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">Telemetry</span></a>
-      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
-      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
-      <a class="flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
+      <a id="nav-dashboard" class="nav-page-link flex items-center gap-3 bg-yellow-400/10 text-yellow-400 rounded-full px-4 py-3 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)] transition-all duration-300" href="#"><span class="material-symbols-outlined">insights</span><span class="font-medium text-sm">控制台</span></a>
+      <a id="nav-persona" class="nav-page-link flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">psychology</span><span class="font-medium text-sm">星宝配置</span></a>
+      <a class="nav-page-link flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="/chat"><span class="material-symbols-outlined">chat</span><span class="font-medium text-sm">打字对话</span></a>
+      <a class="nav-page-link flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">settings_remote</span><span class="font-medium text-sm">Motors</span></a>
+      <a class="nav-page-link flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">sensors</span><span class="font-medium text-sm">Sensors</span></a>
+      <a class="nav-page-link flex items-center gap-3 text-slate-400 px-4 py-3 hover:bg-slate-800/40 hover:text-lavender-200 ease-out duration-300 transition-all rounded-full" href="#"><span class="material-symbols-outlined">auto_stories</span><span class="font-medium text-sm">Diary</span></a>
     </nav>
     <div class="px-4 mt-auto">
       <button id="btn-stop-all" class="w-full bg-error text-[#450900] py-4 rounded-full font-bold shadow-lg flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all">
@@ -117,9 +119,14 @@
     </div>
   </aside>
 
-  <main class="flex-1 ml-52 p-6 flex flex-col gap-6 overflow-hidden">
+  <main class="flex-1 ml-52 p-6 flex flex-col overflow-hidden min-h-0">
+    <div id="view-dashboard" class="flex flex-1 flex-col gap-6 min-h-0 overflow-hidden">
     <header class="flex justify-between items-center w-full px-4 py-2 bg-slate-800/20 rounded-full backdrop-blur-xl">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <button id="btn-object-library" type="button" class="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/15 text-secondary border border-secondary/30 hover:bg-secondary/25 transition-colors text-sm font-semibold shrink-0">
+          <span class="material-symbols-outlined text-base">inventory_2</span>
+          物品库
+        </button>
         <div class="flex p-1 bg-surface-container rounded-full">
           <button id="btn-backend-local" class="px-6 py-2 rounded-full bg-primary text-[#5b4b00] text-sm font-bold clay-btn">本地模式</button>
           <button id="btn-backend-baidu" class="px-6 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">云端同步</button>
@@ -130,6 +137,24 @@
           <span class="material-symbols-outlined text-sm text-on-surface-variant">volume_up</span>
           <input id="speaker-volume-range" type="range" min="0" max="100" value="70" class="w-24 accent-yellow-400" />
           <span id="speaker-volume-text" class="text-[11px] text-on-surface-variant w-10 text-right">70%</span>
+        </div>
+        <div class="flex flex-col gap-1 px-3 py-1.5 rounded-2xl bg-surface-container border border-white/5 max-w-[260px] shrink-0">
+          <div class="flex items-center gap-2 text-[10px] text-on-surface-variant">
+            <span class="material-symbols-outlined text-sm text-primary">mic</span>
+            <span>唤醒阈值</span>
+            <span id="wake-threshold-text" class="ml-auto font-mono text-primary">300</span>
+          </div>
+          <input id="wake-threshold-range" type="range" min="50" max="4000" step="10" value="300" class="w-full h-1 accent-yellow-400" title="超过此 RMS 开始录音" />
+          <div class="flex items-center gap-2 text-[10px] text-on-surface-variant mt-1">
+            <span>静音等待</span>
+            <span id="silence-ms-text" class="ml-auto font-mono text-slate-300">1000ms</span>
+          </div>
+          <input id="silence-ms-range" type="range" min="200" max="8000" step="50" value="1000" class="w-full h-1 accent-yellow-400" title="低于静音 RMS 连续此时长后结束一句" />
+          <div class="flex items-center justify-between text-[9px] text-slate-500 mt-0.5">
+            <span>RMS≤判静音 <span id="silence-rms-text" class="font-mono text-slate-400">200</span></span>
+            <span>实时 <span id="mic-rms-text" class="font-mono text-lavender-200">0</span></span>
+          </div>
+          <input id="silence-rms-range" type="range" min="0" max="2000" step="5" value="200" class="w-full h-1 accent-slate-500 opacity-90" title="麦克风 RMS 低于此值视为静音片段" />
         </div>
         <button id="btn-mute" class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container text-on-surface-variant hover:text-primary transition-colors">
           <span class="material-symbols-outlined text-sm">volume_off</span><span class="text-xs font-semibold">静音: OFF</span>
@@ -168,49 +193,51 @@
           </div>
         </div>
 
-        <div class="h-60 glass-card rounded-xl p-5 grid grid-cols-12 gap-4 items-center">
-          <div class="col-span-7 flex flex-col gap-4">
-            <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
-            <div class="flex items-center gap-6">
-              <div class="relative w-40 h-40 rounded-full bg-surface-container-high shadow-inner flex items-center justify-center border border-white/5">
-                <div class="grid grid-cols-3 grid-rows-3 gap-2">
-                  <div class="col-start-2 flex justify-center"><button id="btn-forward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_up</span></button></div>
-                  <div class="row-start-2 flex justify-center"><button id="btn-left" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_left</span></button></div>
-                  <div class="row-start-2 col-start-2 flex justify-center items-center"><button id="btn-stop" class="w-8 h-8 bg-primary rounded-full shadow-[0_0_15px_rgba(253,216,53,0.4)]"></button></div>
-                  <div class="row-start-2 col-start-3 flex justify-center"><button id="btn-right" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_right</span></button></div>
-                  <div class="row-start-3 col-start-2 flex justify-center"><button id="btn-backward" class="w-10 h-10 bg-slate-700/50 hover:bg-primary/40 rounded-lg flex items-center justify-center transition-all"><span class="material-symbols-outlined">keyboard_arrow_down</span></button></div>
+        <div class="h-[11rem] shrink-0 glass-card rounded-xl p-3 grid grid-cols-12 gap-3 items-center">
+          <div class="col-span-5 flex flex-col gap-1.5 min-w-0">
+            <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">运动控制</h4>
+            <div class="flex items-center gap-3">
+              <div class="relative w-[7.25rem] h-[7.25rem] shrink-0 rounded-full bg-surface-container-high shadow-inner flex items-center justify-center border border-white/5">
+                <div class="grid grid-cols-3 grid-rows-3 gap-1">
+                  <div class="col-start-2 flex justify-center"><button id="btn-forward" class="w-8 h-8 bg-slate-700/50 hover:bg-primary/40 rounded-md flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[1.125rem]">keyboard_arrow_up</span></button></div>
+                  <div class="row-start-2 flex justify-center"><button id="btn-left" class="w-8 h-8 bg-slate-700/50 hover:bg-primary/40 rounded-md flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[1.125rem]">keyboard_arrow_left</span></button></div>
+                  <div class="row-start-2 col-start-2 flex justify-center items-center"><button id="btn-stop" class="w-6 h-6 bg-primary rounded-full shadow-[0_0_12px_rgba(253,216,53,0.35)]"></button></div>
+                  <div class="row-start-2 col-start-3 flex justify-center"><button id="btn-right" class="w-8 h-8 bg-slate-700/50 hover:bg-primary/40 rounded-md flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[1.125rem]">keyboard_arrow_right</span></button></div>
+                  <div class="row-start-3 col-start-2 flex justify-center"><button id="btn-backward" class="w-8 h-8 bg-slate-700/50 hover:bg-primary/40 rounded-md flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[1.125rem]">keyboard_arrow_down</span></button></div>
                 </div>
               </div>
-              <div class="space-y-4">
-                <div class="p-4 bg-surface-container-low rounded-lg border border-white/5 w-48">
-                  <div class="flex justify-between text-[10px] text-slate-500 mb-1"><span>SPEED</span><span id="speed-pct">75%</span></div>
-                  <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full mt-1 accent-yellow-400" />
+              <div class="space-y-2 min-w-0 flex-1">
+                <div class="p-2.5 bg-surface-container-low rounded-lg border border-white/5 max-w-[9.5rem]">
+                  <div class="flex justify-between text-[9px] text-slate-500 mb-0.5"><span>SPEED</span><span id="speed-pct">75%</span></div>
+                  <input id="speed-range" type="range" min="0" max="100" value="75" class="w-full mt-0.5 accent-yellow-400 h-1" />
                 </div>
-                <div class="flex p-1 bg-surface-container rounded-full">
-                  <button id="btn-obstacle" class="px-5 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">自动避障</button>
-                  <button id="btn-follow" class="px-5 py-2 rounded-full text-on-surface-variant text-sm font-medium hover:text-primary transition-colors">跟随模式</button>
+                <div class="flex p-0.5 bg-surface-container rounded-full max-w-[11.5rem]">
+                  <button id="btn-obstacle" class="px-2.5 py-1 rounded-full text-on-surface-variant text-[10px] font-medium hover:text-primary transition-colors">自动避障</button>
+                  <button id="btn-follow" class="px-2.5 py-1 rounded-full text-on-surface-variant text-[10px] font-medium hover:text-primary transition-colors">跟随模式</button>
                 </div>
               </div>
             </div>
           </div>
-          <div class="col-span-5 h-full pl-5 border-l border-white/10 flex flex-col justify-between">
-            <div class="flex items-start justify-between">
-              <div class="text-right">
-              <span class="text-[10px] text-slate-500 block uppercase mb-1">System Health</span>
-              <div class="flex gap-1"><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-primary rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div><div class="w-1 h-4 bg-slate-700 rounded-full"></div></div>
+          <div class="col-span-7 h-full pl-4 border-l border-white/10 flex flex-col justify-between gap-2 min-h-0">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <span class="text-[11px] text-slate-400 block uppercase tracking-wide mb-1.5 font-semibold">健康状态</span>
+                <div class="flex gap-1.5 items-end h-7">
+                  <div class="w-1.5 h-6 bg-primary rounded-full"></div><div class="w-1.5 h-6 bg-primary rounded-full"></div><div class="w-1.5 h-6 bg-primary rounded-full"></div><div class="w-1.5 h-4 bg-slate-700 rounded-full"></div><div class="w-1.5 h-4 bg-slate-700 rounded-full"></div>
+                </div>
               </div>
-              <div id="gyro-status-pill" class="text-[10px] px-2 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
+              <div id="gyro-status-pill" class="text-[10px] px-2 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 shrink-0">
                 陀螺仪识别中
               </div>
             </div>
-            <div class="bg-secondary/10 p-4 rounded-xl border border-secondary/20 flex items-center justify-between gap-4">
-              <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
-              <div>
-                <p class="text-xs font-bold text-secondary">星宝情绪</p>
-                <p id="emotion-txt" class="text-[10px] text-secondary/70">状态: 开心且好奇</p>
-                <p class="text-[10px] text-secondary/70">对话次数: <span id="dialog-turn-count">0</span></p>
+            <div class="bg-secondary/10 p-3.5 rounded-xl border border-secondary/20 flex items-center justify-between gap-3">
+              <span class="material-symbols-outlined text-secondary text-2xl shrink-0" style="font-variation-settings:'FILL' 1;">auto_awesome</span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-bold text-secondary">星宝情绪</p>
+                <p id="emotion-txt" class="text-[11px] text-secondary/80 mt-0.5">状态: 开心且好奇</p>
+                <p class="text-[11px] text-secondary/80">对话次数: <span id="dialog-turn-count">0</span></p>
               </div>
-              <div class="text-right text-[10px] text-slate-400 leading-5">
+              <div class="text-right text-[11px] text-slate-300 leading-snug shrink-0 font-mono">
                 <div>Pitch: <span id="pitch-mini" class="text-primary">0.0</span></div>
                 <div>Roll: <span id="roll-mini" class="text-primary">0.0</span></div>
                 <div>Yaw: <span id="yaw-mini" class="text-primary">0.0</span></div>
@@ -232,36 +259,79 @@
           <div id="event-log" class="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar"></div>
         </div>
 
-        <div class="h-[19rem] glass-card rounded-xl p-6 flex flex-col gap-5">
+        <div class="h-[24rem] shrink-0 glass-card rounded-xl p-5 flex flex-col gap-4">
           <div>
-            <div class="flex justify-between items-center mb-3">
+            <div class="flex justify-between items-center mb-2">
               <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">运动能量</h4>
               <span id="energy-bpm" class="text-[10px] text-secondary">Energy: --</span>
             </div>
-            <div class="h-16 relative overflow-hidden">
+            <div class="h-20 relative overflow-hidden rounded-lg border border-white/5">
               <canvas id="energy-canvas" class="w-full h-full"></canvas>
             </div>
           </div>
-          <div class="flex-1 flex flex-col">
-            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">3D 姿态感应</h4>
-            <div class="flex-1 flex items-center justify-center relative">
+          <div class="flex-1 flex flex-col min-h-0">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">3D 姿态感应</h4>
+            <div class="flex-1 flex items-center justify-center relative min-h-[10rem]">
               <div class="gyro-3d-wrap">
                 <div id="gyro-shell" class="gyro-3d-shell relative flex items-center justify-center">
                   <div id="gyro-ring-x" class="gyro-ring gyro-ring-x"></div>
                   <div id="gyro-ring-y" class="gyro-ring gyro-ring-y"></div>
                   <div id="gyro-ring-z" class="gyro-ring gyro-ring-z"></div>
-                  <div class="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_12px_rgba(253,216,53,0.7)]"></div>
+                  <div class="w-3 h-3 rounded-full bg-primary shadow-[0_0_14px_rgba(253,216,53,0.75)]"></div>
                 </div>
               </div>
-              <div class="absolute right-0 space-y-2 text-[10px]">
-                <div class="flex justify-between gap-4"><span class="text-slate-500">PITCH</span><span id="pitch" class="text-primary">0.0°</span></div>
-                <div class="flex justify-between gap-4"><span class="text-slate-500">ROLL</span><span id="roll" class="text-primary">0.0°</span></div>
-                <div class="flex justify-between gap-4"><span class="text-slate-500">YAW</span><span id="yaw" class="text-primary">0.0°</span></div>
+              <div class="absolute right-0 space-y-2.5 text-[11px]">
+                <div class="flex justify-between gap-5 min-w-[7rem]"><span class="text-slate-500">PITCH</span><span id="pitch" class="text-primary font-mono">0.0°</span></div>
+                <div class="flex justify-between gap-5 min-w-[7rem]"><span class="text-slate-500">ROLL</span><span id="roll" class="text-primary font-mono">0.0°</span></div>
+                <div class="flex justify-between gap-5 min-w-[7rem]"><span class="text-slate-500">YAW</span><span id="yaw" class="text-primary font-mono">0.0°</span></div>
               </div>
             </div>
           </div>
         </div>
       </section>
+    </div>
+    </div>
+
+    <div id="view-persona" class="flex flex-1 flex-col gap-6 min-h-0 overflow-y-auto custom-scrollbar pr-1" style="display: none;">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-primary">星宝配置</h2>
+          <p class="text-sm text-slate-400 mt-1 max-w-2xl">选择人设模式后，会更新发送给智能体的系统提示词（与 JSON 回复格式约定一并生效）。回复长度对应 LLM 的 <span class="text-slate-300 font-mono text-xs">max_tokens</span>，数值越大单次回复可越长。设置保存在机器人 <code class="text-slate-500 text-xs">./data/persona_config.json</code>。</p>
+        </div>
+        <span id="persona-save-status" class="text-xs text-slate-500"></span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button type="button" data-persona-preset="teach" class="persona-preset-card text-left glass-card rounded-2xl p-5 border border-white/10 hover:border-primary/35 transition-all flex flex-col gap-2">
+          <span class="material-symbols-outlined text-3xl text-tertiary">school</span>
+          <span class="text-base font-bold text-on-surface">教学模式</span>
+          <span class="text-xs text-slate-400 leading-relaxed">简单短句、小步骤讲解，多鼓励，适合学习互动。</span>
+        </button>
+        <button type="button" data-persona-preset="companion" class="persona-preset-card text-left glass-card rounded-2xl p-5 border border-white/10 hover:border-primary/35 transition-all flex flex-col gap-2">
+          <span class="material-symbols-outlined text-3xl text-secondary">favorite</span>
+          <span class="text-base font-bold text-on-surface">陪伴模式</span>
+          <span class="text-xs text-slate-400 leading-relaxed">默认人设：温柔简短，与当前线上「正常」对话一致。</span>
+        </button>
+        <button type="button" data-persona-preset="play" class="persona-preset-card text-left glass-card rounded-2xl p-5 border border-white/10 hover:border-primary/35 transition-all flex flex-col gap-2">
+          <span class="material-symbols-outlined text-3xl text-primary">toys</span>
+          <span class="text-base font-bold text-on-surface">玩耍模式</span>
+          <span class="text-xs text-slate-400 leading-relaxed">更活泼、小游戏与角色扮演，仍保持安全、简洁。</span>
+        </button>
+      </div>
+
+      <div class="glass-card rounded-2xl p-5 border border-white/10">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <span class="text-sm font-semibold text-slate-300">单次回复长度（max_tokens）</span>
+          <span class="font-mono text-primary text-sm"><span id="persona-max-tokens-text">300</span> <span class="text-slate-500 text-xs">（80–2048）</span></span>
+        </div>
+        <input id="persona-max-tokens" type="range" min="80" max="2048" step="40" value="300" class="w-full h-2 accent-yellow-400 rounded-lg" />
+        <p class="text-[11px] text-slate-500 mt-2">数值越大，模型可生成的字数上限越高，语音也会相应变长。</p>
+      </div>
+
+      <div class="glass-card rounded-2xl p-5 border border-white/10 flex-1 min-h-[12rem] flex flex-col">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">当前系统提示词（预览）</h3>
+        <pre id="persona-system-preview" class="flex-1 text-[11px] text-slate-300/90 whitespace-pre-wrap break-words font-mono leading-relaxed bg-black/25 rounded-xl p-4 border border-white/5 overflow-y-auto custom-scrollbar"></pre>
+      </div>
     </div>
   </main>
 
@@ -276,10 +346,41 @@
     </div>
   </div>
 
+  <div id="object-library-modal" class="fixed inset-0 z-[96] bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="w-[92vw] max-w-3xl max-h-[88vh] bg-surface-container rounded-2xl border border-white/10 overflow-hidden flex flex-col shadow-[0_0_60px_rgba(0,0,0,0.5)]">
+      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
+        <div>
+          <h3 class="text-sm font-bold text-primary">识别物品库</h3>
+          <p class="text-[11px] text-slate-400 mt-1">除「人」以外的 YOLO 类别；每秒在画面中出现且置信度≥30% 时该类 +1。数据保存在机器人 <code class="text-slate-500">./data/object_library.json</code></p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="btn-object-library-reset" type="button" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-xs text-slate-200">清零计数</button>
+          <button id="btn-object-library-close" type="button" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs">关闭</button>
+        </div>
+      </div>
+      <div id="object-library-grid" class="p-4 overflow-y-auto custom-scrollbar grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+    </div>
+  </div>
+
+  <div id="alert-modal" class="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="w-[92vw] max-w-5xl max-h-[92vh] bg-surface-container rounded-2xl border border-white/10 overflow-hidden flex flex-col">
+      <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-error">危险报警证据</h3>
+          <p id="alert-modal-meta" class="text-xs text-slate-300 mt-1">--</p>
+        </div>
+        <button id="btn-alert-close" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs">关闭</button>
+      </div>
+      <div id="alert-modal-images" class="p-4 overflow-auto grid grid-cols-2 md:grid-cols-3 gap-3"></div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const logEl = $("event-log");
     const seenDialogSigs = new Set();
+    const seenAlertSigs = new Set();
+    const alertEventMap = new Map();
     let currentAct = "stop";
     let heartbeat = null;
     let energyLevel = 0;
@@ -287,6 +388,257 @@
     let obstacleOn = false;
     let followOn = false;
     let lastImuSeenAt = 0;
+    let lastObjectLibrary = [];
+    let personaPresetCurrent = "companion";
+
+    function paintNavActive(page) {
+      const dash = $("nav-dashboard");
+      const pers = $("nav-persona");
+      const base = "nav-page-link flex items-center gap-3 rounded-full px-4 py-3 transition-all duration-300 ";
+      const inactive = "text-slate-400 hover:bg-slate-800/40 hover:text-lavender-200 ease-out";
+      const active = "bg-yellow-400/10 text-yellow-400 shadow-[inset_0_2px_4px_rgba(255,255,255,0.1)]";
+      dash.className = base + (page === "dashboard" ? active : inactive);
+      pers.className = base + (page === "persona" ? active : inactive);
+    }
+
+    function setMainView(page) {
+      const vDash = $("view-dashboard");
+      const vPers = $("view-persona");
+      if (page === "persona") {
+        vDash.style.display = "none";
+        vPers.style.display = "flex";
+        paintNavActive("persona");
+        refreshPersonaFromServer();
+      } else {
+        vDash.style.display = "flex";
+        vPers.style.display = "none";
+        paintNavActive("dashboard");
+      }
+    }
+
+    function paintPersonaPresetCards(selected) {
+      personaPresetCurrent = selected;
+      document.querySelectorAll(".persona-preset-card").forEach((el) => {
+        const p = el.getAttribute("data-persona-preset");
+        const on = p === selected;
+        el.classList.toggle("ring-2", on);
+        el.classList.toggle("ring-primary/60", on);
+        el.classList.toggle("border-primary/45", on);
+        el.classList.toggle("bg-primary/8", on);
+      });
+    }
+
+    async function refreshPersonaFromServer() {
+      const st = $("persona-save-status");
+      try {
+        const res = await fetch("/api/v1/dialog/persona");
+        const j = await res.json();
+        if (!j || j.ok === false) {
+          if (st) st.textContent = j && j.error ? "加载失败" : "加载失败";
+          return;
+        }
+        const preset = j.preset || "companion";
+        let mt = Number(j.max_tokens);
+        if (!Number.isFinite(mt)) mt = 300;
+        mt = Math.max(80, Math.min(2048, mt));
+        $("persona-max-tokens").value = String(mt);
+        $("persona-max-tokens-text").textContent = String(mt);
+        paintPersonaPresetCards(preset);
+        $("persona-system-preview").textContent = j.system_prompt || "";
+        if (st) st.textContent = "";
+      } catch (_) {
+        if (st) st.textContent = "网络错误";
+      }
+    }
+
+    async function postPersonaUpdate(patch) {
+      const st = $("persona-save-status");
+      try {
+        const res = await fetch("/api/v1/dialog/persona", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const j = await res.json();
+        if (!j || j.ok === false) {
+          if (st) st.textContent = "保存失败";
+          logSystem("星宝配置保存失败");
+          return;
+        }
+        if (j.preset) paintPersonaPresetCards(j.preset);
+        if (j.max_tokens != null) {
+          $("persona-max-tokens").value = String(j.max_tokens);
+          $("persona-max-tokens-text").textContent = String(j.max_tokens);
+        }
+        $("persona-system-preview").textContent = j.system_prompt || "";
+        if (st) st.textContent = "已保存";
+        setTimeout(() => {
+          if (st && st.textContent === "已保存") st.textContent = "";
+        }, 2200);
+        logSystem("星宝人设已更新");
+      } catch (_) {
+        if (st) st.textContent = "网络错误";
+        logSystem("星宝配置保存失败");
+      }
+    }
+
+    /** 与 config.hpp kClassNames 一致（不含 Ren）；用于中文名 + Material Symbol 图标 */
+    const OBJECT_LIB_META = {
+      ZiXingChe: { zh: "自行车", icon: "pedal_bike" },
+      QiChe: { zh: "汽车", icon: "directions_car" },
+      MoTuoChe: { zh: "摩托车", icon: "two_wheeler" },
+      FeiJi: { zh: "飞机", icon: "flight" },
+      GongJiaoChe: { zh: "公交车", icon: "directions_bus" },
+      HuoChe: { zh: "火车", icon: "train" },
+      KaChe: { zh: "卡车", icon: "local_shipping" },
+      Chuan: { zh: "船", icon: "sailing" },
+      HongLvDeng: { zh: "红绿灯", icon: "traffic" },
+      XiaoFangShuan: { zh: "消防栓", icon: "water_drop" },
+      TingZhiPai: { zh: "停止牌", icon: "block" },
+      TingCheBiao: { zh: "停车表", icon: "local_parking" },
+      ChangYi: { zh: "衣物", icon: "checkroom" },
+      Niao: { zh: "鸟", icon: "raven" },
+      Mao: { zh: "猫", icon: "pets" },
+      Gou: { zh: "狗", icon: "pets" },
+      Ma: { zh: "马", icon: "agriculture" },
+      Yang: { zh: "羊", icon: "grass" },
+      Niu: { zh: "牛", icon: "grass" },
+      DaXiang: { zh: "大象", icon: "pets" },
+      Xiong: { zh: "熊", icon: "pets" },
+      BanMa: { zh: "斑马", icon: "texture" },
+      ChangJingLu: { zh: "长颈鹿", icon: "emoji_nature" },
+      BeiBao: { zh: "背包", icon: "backpack" },
+      YuSan: { zh: "雨伞", icon: "umbrella" },
+      ShouTiBao: { zh: "手提包", icon: "shopping_bag" },
+      LingDai: { zh: "领带", icon: "styler" },
+      XingLiXiang: { zh: "行李箱", icon: "luggage" },
+      FeiPan: { zh: "飞盘", icon: "album" },
+      HuaXueBan: { zh: "滑雪板", icon: "downhill_skiing" },
+      DanBan: { zh: "滑板", icon: "skateboarding" },
+      YunDongQiu: { zh: "球类", icon: "sports_soccer" },
+      FengZheng: { zh: "风筝", icon: "kite" },
+      BangQiuBang: { zh: "棒球棒", icon: "sports_baseball" },
+      ShouTao: { zh: "手套", icon: "sports_martial_arts" },
+      HuaBan: { zh: "滑板", icon: "skateboarding" },
+      ChongLangBan: { zh: "冲浪板", icon: "surfing" },
+      WangQiuPai: { zh: "网球拍", icon: "sports_tennis" },
+      PingZi: { zh: "瓶子", icon: "water_drop" },
+      GaoJiaoBei: { zh: "高脚杯", icon: "wine_bar" },
+      BeiZi: { zh: "杯子", icon: "coffee" },
+      ChaZi: { zh: "叉子", icon: "restaurant" },
+      Dao: { zh: "刀", icon: "restaurant" },
+      ShaoZi: { zh: "勺子", icon: "soup_kitchen" },
+      Wan: { zh: "碗", icon: "ramen_dining" },
+      XiangJiao: { zh: "香蕉", icon: "nutrition" },
+      PingGuo: { zh: "苹果", icon: "nutrition" },
+      SanMingZhi: { zh: "三明治", icon: "lunch_dining" },
+      JuZi: { zh: "橙子", icon: "nutrition" },
+      XiLanHua: { zh: "西兰花", icon: "eco" },
+      HuLuoBo: { zh: "胡萝卜", icon: "nutrition" },
+      ReGou: { zh: "热狗", icon: "fastfood" },
+      PiSa: { zh: "披萨", icon: "local_pizza" },
+      TianTianQuan: { zh: "甜甜圈", icon: "bakery_dining" },
+      DanGao: { zh: "蛋糕", icon: "cake" },
+      YiZi: { zh: "椅子", icon: "chair" },
+      ShaFa: { zh: "沙发", icon: "weekend" },
+      PenZai: { zh: "盆栽", icon: "potted_plant" },
+      Chuang: { zh: "床", icon: "bed" },
+      CanZhuo: { zh: "餐桌", icon: "table_restaurant" },
+      MaTong: { zh: "马桶", icon: "wc" },
+      DianShi: { zh: "电视", icon: "tv" },
+      BiJiBen: { zh: "笔记本", icon: "laptop" },
+      ShuBiao: { zh: "鼠标", icon: "mouse" },
+      YaoKongQi: { zh: "遥控器", icon: "settings_remote" },
+      JianPan: { zh: "键盘", icon: "keyboard" },
+      ShouJi: { zh: "手机", icon: "smartphone" },
+      WeiBoLu: { zh: "微波炉", icon: "microwave" },
+      KaoXiang: { zh: "烤箱", icon: "oven_gen" },
+      MianBaoJi: { zh: "面包机", icon: "breakfast_dining" },
+      ShuiCao: { zh: "水槽", icon: "water_damage" },
+      BingXiang: { zh: "冰箱", icon: "kitchen" },
+      Shu: { zh: "书", icon: "menu_book" },
+      ZhongBiao: { zh: "钟表", icon: "schedule" },
+      HuaPing: { zh: "花瓶", icon: "local_florist" },
+      JianDao: { zh: "剪刀", icon: "content_cut" },
+      TaiDiXiong: { zh: "泰迪熊", icon: "toys" },
+      ChuiFengJi: { zh: "吹风机", icon: "air" },
+      YaShua: { zh: "牙刷", icon: "cleaning_services" },
+    };
+
+    function objectLibIcon(name) {
+      const m = OBJECT_LIB_META[name];
+      return (m && m.icon) || "inventory_2";
+    }
+    function objectLibZh(name) {
+      const m = OBJECT_LIB_META[name];
+      return (m && m.zh) || name;
+    }
+    function renderObjectLibrary() {
+      const grid = $("object-library-grid");
+      if (!grid) return;
+      grid.innerHTML = "";
+      const items = Array.isArray(lastObjectLibrary) ? lastObjectLibrary.slice() : [];
+      if (!items.length) {
+        const p = document.createElement("p");
+        p.className = "text-sm text-slate-400 col-span-full text-center py-10 px-4";
+        p.textContent = "暂无记录。摄像头持续识别到除人以外的物品时，会按秒累加各类别出现次数。";
+        grid.appendChild(p);
+        return;
+      }
+      for (const it of items) {
+        const key = String(it.label || "");
+        const zh = objectLibZh(key);
+        const icon = objectLibIcon(key);
+        const cnt = Number(it.count) || 0;
+        const card = document.createElement("div");
+        card.className = "flex items-center gap-3 p-3 rounded-xl bg-surface-container-low border border-white/5";
+        const iconEl = document.createElement("div");
+        iconEl.className = "w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20";
+        const sym = document.createElement("span");
+        sym.className = "material-symbols-outlined text-2xl text-primary";
+        sym.textContent = icon;
+        iconEl.appendChild(sym);
+        const text = document.createElement("div");
+        text.className = "flex-1 min-w-0";
+        const title = document.createElement("div");
+        title.className = "text-sm font-bold text-on-surface truncate";
+        title.textContent = zh;
+        const sub = document.createElement("div");
+        sub.className = "text-[10px] text-slate-500 font-mono truncate mt-0.5";
+        sub.textContent = key;
+        text.appendChild(title);
+        text.appendChild(sub);
+        const badge = document.createElement("div");
+        badge.className = "text-lg font-black text-secondary tabular-nums shrink-0";
+        badge.textContent = String(cnt);
+        card.appendChild(iconEl);
+        card.appendChild(text);
+        card.appendChild(badge);
+        grid.appendChild(card);
+      }
+    }
+    function openObjectLibraryModal() {
+      const el = $("object-library-modal");
+      el.classList.remove("hidden");
+      el.classList.add("flex");
+      document.body.style.overflow = "hidden";
+      renderObjectLibrary();
+      fetch("/api/v1/status")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d && Array.isArray(d.object_library)) {
+            lastObjectLibrary = d.object_library;
+            renderObjectLibrary();
+          }
+        })
+        .catch(() => {});
+    }
+    function closeObjectLibraryModal() {
+      const el = $("object-library-modal");
+      el.classList.add("hidden");
+      el.classList.remove("flex");
+      document.body.style.overflow = "";
+    }
 
     function nowTime() { return new Date().toTimeString().slice(0, 8); }
     function openCamModal() {
@@ -307,6 +659,80 @@
       while (logEl.children.length > 120) logEl.removeChild(logEl.lastChild);
     }
     function logSystem(msg) { logRow("info", msg, nowTime(), "text-tertiary"); }
+    function logAlert(msg) { logRow("warning", "报警: " + msg, nowTime(), "text-error"); }
+    function normalizeEvidenceWebDir(ev) {
+      if (!ev) return "";
+      if (ev.evidence_web_dir) return String(ev.evidence_web_dir);
+      const raw = String(ev.evidence_dir || "").replaceAll("\\", "/");
+      const p = raw.indexOf("alerts/");
+      if (p >= 0) return "/alerts/" + raw.slice(p + 7);
+      return "";
+    }
+    function openAlertModal() {
+      $("alert-modal").classList.remove("hidden");
+      $("alert-modal").classList.add("flex");
+      document.body.style.overflow = "hidden";
+    }
+    function closeAlertModal() {
+      $("alert-modal").classList.add("hidden");
+      $("alert-modal").classList.remove("flex");
+      document.body.style.overflow = "hidden";
+    }
+    async function openAlertEvidence(sig) {
+      const ev = alertEventMap.get(sig);
+      if (!ev) return;
+      const metaTxt = (ev.ts || "--") + "｜" + (ev.reason || "报警") + (ev.detail ? "｜" + ev.detail : "");
+      $("alert-modal-meta").textContent = metaTxt;
+      const box = $("alert-modal-images");
+      box.innerHTML = "<div class='text-xs text-slate-400'>加载中...</div>";
+      openAlertModal();
+
+      const webDir = normalizeEvidenceWebDir(ev);
+      if (!webDir) {
+        box.innerHTML = "<div class='text-xs text-slate-400'>未找到证据目录</div>";
+        return;
+      }
+      try {
+        const metaRes = await fetch(webDir + "/meta.json?_t=" + Date.now());
+        let count = 0;
+        if (metaRes.ok) {
+          const m = await metaRes.json();
+          count = Number(m.saved_images || 0);
+        }
+        if (!Number.isFinite(count) || count <= 0) count = 20;
+        box.innerHTML = "";
+
+        // 只显示5张：尽量覆盖全时段，且不裁剪（object-contain）
+        const want = 5;
+        const indices = [];
+        if (count <= want) {
+          for (let i = 0; i < count; i++) indices.push(i);
+        } else {
+          const step = Math.max(1, Math.floor(count / want));
+          for (let i = 0; i < count && indices.length < want; i += step) indices.push(i);
+          const last = count - 1;
+          if (indices[indices.length - 1] !== last && indices.length < want) indices[indices.length - 1] = last;
+        }
+
+        indices.forEach((i) => {
+          const idx = String(i).padStart(3, "0");
+          const u = webDir + "/img_" + idx + ".jpg";
+          const wrap = document.createElement("a");
+          wrap.href = u;
+          wrap.target = "_blank";
+          wrap.className = "block rounded-lg overflow-hidden border border-white/10 bg-black";
+          const im = document.createElement("img");
+          im.src = u;
+          im.loading = "lazy";
+          im.className = "w-full h-40 object-contain bg-black";
+          im.onerror = () => { wrap.remove(); };
+          wrap.appendChild(im);
+          box.appendChild(wrap);
+        });
+      } catch (_) {
+        box.innerHTML = "<div class='text-xs text-slate-400'>加载证据失败</div>";
+      }
+    }
     function logUser(msg) { logRow("face", "你: " + msg, nowTime(), "text-secondary"); }
     function logAi(msg) { logRow("smart_toy", "星宝: " + msg, nowTime(), "text-primary"); }
 
@@ -395,6 +821,32 @@
       }
       if (seenDialogSigs.size > 1500) seenDialogSigs.clear();
     }
+    function renderAlertEvents(items) {
+      const start = Math.max(0, items.length - 6);
+      for (let i = start; i < items.length; i++) {
+        const it = items[i] || {};
+        const reason = String(it.reason || "");
+        const detail = String(it.detail || "");
+        const ts = String(it.ts || "");
+        const sig = ts + "|" + reason + "|" + detail;
+        if (!reason || seenAlertSigs.has(sig)) continue;
+        seenAlertSigs.add(sig);
+        alertEventMap.set(sig, it);
+        let msg = reason;
+        if (detail) msg += "（" + detail + "）";
+        if (it.evidence_dir) msg += "，已保存证据";
+        const wrap = document.createElement("div");
+        wrap.className = "flex gap-3 cursor-pointer";
+        wrap.innerHTML =
+          '<div class="w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center shrink-0 border border-red-400/30">' +
+          '<span class="material-symbols-outlined text-sm text-red-400">warning</span></div>' +
+          '<div class="text-xs"><p class="text-red-300 font-semibold">报警: ' + msg + '</p><p class="text-slate-400 mt-1">' + nowTime() + '</p></div>';
+        wrap.addEventListener("click", () => openAlertEvidence(sig));
+        logEl.prepend(wrap);
+        while (logEl.children.length > 120) logEl.removeChild(logEl.lastChild);
+      }
+      if (seenAlertSigs.size > 800) seenAlertSigs.clear();
+    }
     function applyStatus(d) {
       $("face-status").textContent = "人脸识别: " + (d.face ? "已激活" : "无目标");
       $("face-person").textContent = pickFaceIdentity(d.face);
@@ -429,7 +881,62 @@
         lastImuSeenAt = Date.now();
       }
       if (Array.isArray(d.dialog_events)) renderDialogEvents(d.dialog_events);
+      if (Array.isArray(d.alert_events)) renderAlertEvents(d.alert_events);
       if (d.fps != null) $("cam-badge").textContent = "LIVE FEED • " + d.fps + " FPS";
+      paintWakeFromStatus(d);
+      if (Array.isArray(d.object_library)) {
+        lastObjectLibrary = d.object_library;
+        const libModal = $("object-library-modal");
+        if (libModal && !libModal.classList.contains("hidden")) renderObjectLibrary();
+      }
+    }
+
+    function isWakeSliderFocused() {
+      const ae = document.activeElement;
+      return ae === $("wake-threshold-range") || ae === $("silence-ms-range") || ae === $("silence-rms-range");
+    }
+    function paintWakeFromStatus(d) {
+      if (d.mic_rms != null) $("mic-rms-text").textContent = String(d.mic_rms);
+      if (isWakeSliderFocused()) return;
+      const wt = $("wake-threshold-range");
+      const sm = $("silence-ms-range");
+      const sr = $("silence-rms-range");
+      if (d.voice_threshold != null) {
+        wt.value = String(Math.max(Number(wt.min), Math.min(Number(wt.max), d.voice_threshold)));
+        $("wake-threshold-text").textContent = wt.value;
+      }
+      if (d.silence_limit_ms != null) {
+        sm.value = String(Math.max(Number(sm.min), Math.min(Number(sm.max), d.silence_limit_ms)));
+        $("silence-ms-text").textContent = sm.value + "ms";
+      }
+      if (d.silence_threshold != null) {
+        sr.value = String(Math.max(Number(sr.min), Math.min(Number(sr.max), d.silence_threshold)));
+        $("silence-rms-text").textContent = sr.value;
+      }
+    }
+    async function fetchWakeParams() {
+      try {
+        const res = await fetch("/api/v1/audio/wake");
+        const j = await res.json();
+        if (!j || j.ok === false) return;
+        paintWakeFromStatus(j);
+      } catch (_) {}
+    }
+    async function pushWakeParams(patch) {
+      try {
+        const res = await fetch("/api/v1/audio/wake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const j = await res.json();
+        if (j && j.ok !== false) {
+          logSystem("语音门限已更新");
+          paintWakeFromStatus(j);
+        }
+      } catch (_) {
+        logSystem("语音门限更新失败");
+      }
     }
 
     async function setBackend(mode) {
@@ -441,6 +948,7 @@
       } catch (_) {}
     }
     async function toggleMute() { try { await fetch("/api/v1/mute?mode=toggle"); } catch (_) {} }
+
     async function fetchSpeakerVolume() {
       try {
         const res = await fetch("/api/v1/audio/volume");
@@ -498,6 +1006,7 @@
         const j = await res.json();
         if (j && j.ok) {
           seenDialogSigs.clear();
+          seenAlertSigs.clear();
           logEl.innerHTML = "";
           logSystem("日志与记忆已清空");
           $("dialog-turn-count").textContent = "0";
@@ -579,6 +1088,39 @@
       }
     }
 
+    $("nav-dashboard").addEventListener("click", (e) => {
+      e.preventDefault();
+      setMainView("dashboard");
+    });
+    $("nav-persona").addEventListener("click", (e) => {
+      e.preventDefault();
+      setMainView("persona");
+    });
+    document.querySelectorAll(".nav-page-link").forEach((a) => {
+      if (a.id === "nav-dashboard" || a.id === "nav-persona") return;
+      a.addEventListener("click", (e) => {
+        const href = a.getAttribute("href") || "";
+        // 只有“页内切换”的占位链接才拦截；真实链接（如 /chat）直接交给浏览器跳转
+        if (href === "#" || href === "" || href.startsWith("#")) {
+          e.preventDefault();
+          setMainView("dashboard");
+        }
+      });
+    });
+    document.querySelectorAll(".persona-preset-card").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const p = btn.getAttribute("data-persona-preset");
+        if (!p) return;
+        postPersonaUpdate({ preset: p });
+      });
+    });
+    $("persona-max-tokens").addEventListener("input", (e) => {
+      $("persona-max-tokens-text").textContent = e.target.value;
+    });
+    $("persona-max-tokens").addEventListener("change", (e) => {
+      postPersonaUpdate({ max_tokens: Number(e.target.value) });
+    });
+
     bindHold("btn-forward", "forward");
     bindHold("btn-backward", "backward");
     bindHold("btn-left", "left");
@@ -587,10 +1129,32 @@
     $("btn-stop-all").addEventListener("click", stopMove);
     $("btn-backend-local").addEventListener("click", () => setBackend("local"));
     $("btn-backend-baidu").addEventListener("click", () => setBackend("baidu"));
+    $("btn-object-library").addEventListener("click", openObjectLibraryModal);
+    $("btn-object-library-close").addEventListener("click", closeObjectLibraryModal);
+    $("object-library-modal").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "object-library-modal") closeObjectLibraryModal();
+    });
+    $("btn-object-library-reset").addEventListener("click", () => {
+      if (!confirm("确定清零所有物品计数？此操作不可恢复。")) return;
+      fetch("/api/v1/vision/object_library/reset", { method: "POST" })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && j.ok) {
+            lastObjectLibrary = [];
+            renderObjectLibrary();
+            logSystem("物品库计数已清零");
+          } else logSystem("物品库清零失败");
+        })
+        .catch(() => logSystem("物品库清零失败"));
+    });
     $("btn-mute").addEventListener("click", toggleMute);
     $("btn-clear-memory").addEventListener("click", clearMemory);
     $("btn-obstacle").addEventListener("click", toggleObstacle);
     $("btn-follow").addEventListener("click", toggleFollow);
+    $("btn-alert-close").addEventListener("click", closeAlertModal);
+    $("alert-modal").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "alert-modal") closeAlertModal();
+    });
     $("cam-card").addEventListener("click", openCamModal);
     $("btn-cam-close").addEventListener("click", closeCamModal);
     $("cam-modal").addEventListener("click", (e) => {
@@ -600,6 +1164,25 @@
     paintFeatureButton("btn-follow", followOn);
     $("speaker-volume-range").addEventListener("input", (e) => paintSpeakerVolume(e.target.value));
     $("speaker-volume-range").addEventListener("change", (e) => setSpeakerVolume(e.target.value));
+
+    $("wake-threshold-range").addEventListener("input", (e) => {
+      $("wake-threshold-text").textContent = e.target.value;
+    });
+    $("wake-threshold-range").addEventListener("change", (e) => {
+      pushWakeParams({ voice_threshold: Number(e.target.value) });
+    });
+    $("silence-ms-range").addEventListener("input", (e) => {
+      $("silence-ms-text").textContent = e.target.value + "ms";
+    });
+    $("silence-ms-range").addEventListener("change", (e) => {
+      pushWakeParams({ silence_limit_ms: Number(e.target.value) });
+    });
+    $("silence-rms-range").addEventListener("input", (e) => {
+      $("silence-rms-text").textContent = e.target.value;
+    });
+    $("silence-rms-range").addEventListener("change", (e) => {
+      pushWakeParams({ silence_threshold: Number(e.target.value) });
+    });
 
     $("speed-range").addEventListener("input", (e) => {
       const val = Math.max(0, Math.min(100, Number(e.target.value || 0)));
@@ -620,12 +1203,19 @@
     });
     window.addEventListener("keyup", (e) => { if (["w","a","s","d"," "].includes(e.key)) stopMove(); });
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeCamModal();
+      if (e.key === "Escape") {
+        closeObjectLibraryModal();
+        closeCamModal();
+      }
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeAlertModal();
     });
 
     connectSSE();
     pollState();
     fetchSpeakerVolume();
+    fetchWakeParams();
     setInterval(pollState, 1400);
     setInterval(fetchSpeakerVolume, 5000);
     setInterval(updateGyroStatus, 600);

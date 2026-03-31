@@ -75,6 +75,32 @@ public:
         faces = last_faces_;
     }
 
+    // 仅做物品检测（YOLO），用于提高物品识别刷新率
+    // 注意：不执行人脸识别/情绪，避免拖慢或降低整体体验
+    void ProcessObjects(cv::Mat& frame, std::vector<ObjectResult>& objects) {
+        float ratio = std::min(640.0f / frame.cols, 640.0f / frame.rows);
+        cv::Mat canvas(640, 640, CV_8UC3, cv::Scalar(114, 114, 114));
+        cv::resize(frame,
+                   canvas(cv::Rect((640 - frame.cols * ratio) / 2, (640 - frame.rows * ratio) / 2,
+                                   frame.cols * ratio, frame.rows * ratio)),
+                   cv::Size(frame.cols * ratio, frame.rows * ratio));
+
+        FastPlanarBgr2Rgb(canvas, yolo_buffer_.data());
+        void* inputs[] = { yolo_buffer_.data() };
+        awnn_set_input_buffers(yolo_ctx_, inputs);
+        awnn_run(yolo_ctx_);
+        float** yolo_out = (float**)awnn_get_output_buffers(yolo_ctx_);
+        objects = DecodeYolo(yolo_out, ratio, frame.cols, frame.rows);
+    }
+
+    // 仅做人脸检测/识别+情绪更新（不再跑 YOLO），用于避免重复物品推理
+    void ProcessFaces(cv::Mat& frame, std::vector<FaceResult>& faces, int frame_count) {
+        if (frame_count % 5 == 0 || last_faces_.empty()) {
+            last_faces_ = DetectFaces(frame);
+        }
+        faces = last_faces_;
+    }
+
 private:
     Awnn_Context_t* yolo_ctx_ = nullptr;
     std::vector<uint8_t> yolo_buffer_;

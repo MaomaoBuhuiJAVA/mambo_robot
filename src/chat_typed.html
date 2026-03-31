@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html class="dark" lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星宝 - 打字对话</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            surface: "#0b0c1f",
+            primary: "#fdd835",
+            secondary: "#efb1f9",
+            outline: "#46465b",
+            error: "#ff7351",
+          },
+          fontFamily: { body: ["Plus Jakarta Sans", "sans-serif"] }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #0b0c1f;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(253, 216, 53, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(239, 177, 249, 0.08) 0%, transparent 40%);
+      font-family: "Plus Jakarta Sans", sans-serif;
+      color: #e4e3fe;
+    }
+    .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 420, "GRAD" 0, "opsz" 24; }
+  </style>
+</head>
+<body class="h-screen flex">
+  <aside class="w-56 shrink-0 h-full px-4 py-6 bg-black/25 backdrop-blur-2xl border-r border-white/5">
+    <div class="px-2 mb-8">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-primary/20 ring-2 ring-primary/25 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary">star</span>
+        </div>
+        <div>
+          <div class="font-black text-yellow-300 leading-tight">星宝</div>
+          <div class="text-xs text-slate-400">打字对话</div>
+        </div>
+      </div>
+    </div>
+    <nav class="space-y-2">
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 hover:bg-white/5 transition" href="/dashboard">
+        <span class="material-symbols-outlined text-[20px]">insights</span>
+        <span class="text-sm font-semibold">控制台</span>
+      </a>
+      <a class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-yellow-400/10 text-yellow-300 border border-yellow-400/20" href="/chat">
+        <span class="material-symbols-outlined text-[20px]">chat</span>
+        <span class="text-sm font-semibold">打字对话</span>
+      </a>
+    </nav>
+    <div class="mt-8 space-y-3 px-2">
+      <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-white/10 bg-white/5">
+        <div class="min-w-0">
+          <div class="text-sm font-bold">复述模式</div>
+          <div class="text-xs text-slate-400">输入什么，星宝就说什么</div>
+        </div>
+        <input id="toggle-echo" type="checkbox" class="h-5 w-5 rounded accent-yellow-400" />
+      </label>
+
+      <label class="flex items-center justify-between gap-3 p-3 rounded-xl border border-white/10 bg-white/5">
+        <div class="min-w-0">
+          <div class="text-sm font-bold">语音播报</div>
+          <div class="text-xs text-slate-400">让星宝把回复说出来</div>
+        </div>
+        <input id="toggle-speak" type="checkbox" class="h-5 w-5 rounded accent-yellow-400" checked />
+      </label>
+    </div>
+  </aside>
+
+  <main class="flex-1 h-full flex flex-col min-w-0">
+    <header class="px-6 py-4 border-b border-white/5 bg-black/10">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <div class="text-lg font-black text-yellow-300">打字对话</div>
+          <div class="text-xs text-slate-400">POST `/api/v1/dialog/text`</div>
+        </div>
+        <button id="btn-clear" class="px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-sm font-semibold">
+          清空本页
+        </button>
+      </div>
+    </header>
+
+    <section class="flex-1 min-h-0 overflow-y-auto px-6 py-4" id="chat-log"></section>
+
+    <footer class="p-4 border-t border-white/5 bg-black/10">
+      <form id="form-send" class="flex items-end gap-3">
+        <textarea id="input-text" rows="2" class="flex-1 resize-none rounded-2xl bg-white/5 border border-white/10 focus:border-yellow-400/40 focus:ring-0 text-slate-100 placeholder:text-slate-500 p-4"
+          placeholder="在这里输入…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button id="btn-send" type="submit" class="px-5 py-3 rounded-2xl bg-yellow-400 text-[#5b4b00] font-black hover:brightness-105 active:scale-[0.98] transition">
+          发送
+        </button>
+      </form>
+      <div id="hint" class="mt-2 text-xs text-slate-500"></div>
+    </footer>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = $("chat-log");
+    const input = $("input-text");
+    const echo = $("toggle-echo");
+    const speak = $("toggle-speak");
+    const hint = $("hint");
+
+    function addBubble(role, text) {
+      const wrap = document.createElement("div");
+      wrap.className = "mb-3 flex " + (role === "user" ? "justify-end" : "justify-start");
+      const b = document.createElement("div");
+      b.className = "max-w-[min(680px,85%)] whitespace-pre-wrap rounded-2xl px-4 py-3 border " +
+        (role === "user"
+          ? "bg-yellow-400/10 border-yellow-400/20 text-slate-100"
+          : "bg-white/5 border-white/10 text-slate-200");
+      b.textContent = text;
+      wrap.appendChild(b);
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function sendText(text) {
+      const mode = echo.checked ? "echo" : "chat";
+      const body = { text, mode, speak: !!speak.checked };
+      const res = await fetch("/api/v1/dialog/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data || data.ok !== true) {
+        const err = (data && (data.error || data.message)) ? (data.error || data.message) : ("http_" + res.status);
+        addBubble("assistant", "出错了：" + err);
+        return;
+      }
+      addBubble("assistant", data.reply || "…");
+    }
+
+    $("form-send").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = (input.value || "").trim();
+      if (!text) return;
+      input.value = "";
+      addBubble("user", text);
+      hint.textContent = "发送中…";
+      try {
+        await sendText(text);
+      } finally {
+        hint.textContent = "";
+      }
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        $("btn-send").click();
+      }
+    });
+
+    $("btn-clear").addEventListener("click", () => {
+      log.innerHTML = "";
+      hint.textContent = "";
+      input.focus();
+    });
+
+    // welcome
+    addBubble("assistant", "你好呀，我是星宝。你可以直接打字和我聊天；打开“复述模式”后，我会把你输入的内容原样说出来。");
+  </script>
+</body>
+</html>

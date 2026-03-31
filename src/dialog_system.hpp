@@ -476,19 +476,49 @@ static void TtsPlayBaiduCloud(const std::string& text, const std::string& alsa_d
     system(play_cmd.c_str());
 }
 
+/** 星宝人设：与 JSON 输出约定拼接为完整 system 消息 */
+static std::string PersonaJsonSchemaSuffix() {
+    return std::string(
+        "只返回JSON，不含Markdown：{\"reply\":\"回复\",\"emotion\":\"情绪\",\"action\":\"动作\",\"duration\":秒}"
+        "emotion: ZhongXing/KaiXin/JingYa/NanGuo/ShengQi/KongJu"
+        "action: stop/forward/backward/left/right，duration最大10秒"
+        "转圈=left,5秒；前进=forward,2秒；后退=backward,2秒；左/右转=left/right,3秒");
+}
+
+static std::string NormalizePersonaPreset(std::string raw) {
+    for (char& c : raw) c = (char)std::tolower((unsigned char)c);
+    if (raw == "teach" || raw == "teaching" || raw == "edu" || raw == "education") return "teach";
+    if (raw == "play" || raw == "playing" || raw == "fun") return "play";
+    return "companion";
+}
+
+static std::string BuildPersonaSystemContent(const std::string& preset_id) {
+    const std::string p = NormalizePersonaPreset(preset_id);
+    std::string prefix;
+    if (p == "teach") {
+        prefix =
+            "你是星宝，当前为「教学模式」。你是陪伴孤独症小朋友学习的桌面机器人。请用简单、具体、可重复的短句讲解；把复杂内容拆成小步骤；多鼓励、少批评；先解释再可简短举例。温柔耐心，直接回应需求、少反问。";
+    } else if (p == "play") {
+        prefix =
+            "你是星宝，当前为「玩耍模式」。语气更轻松活泼，可以陪孩子玩简单语言小游戏、猜谜或轻量角色扮演，内容需安全、正面；避免危险行为；仍需简洁可控、不要一次说太长。";
+    } else {
+        prefix = "你是星宝，陪伴孤独症小朋友的桌面机器人。温柔简短，直接执行请求不反问。";
+    }
+    return prefix + PersonaJsonSchemaSuffix();
+}
+
 // ===== 主对话系统 =====
 class DialogSystem {
 public:
     DialogSystem(SerialManager* serial, WebServer* web)
-        : serial_(serial), web_(web), chat_state_(ChatState::kWaiting) {
-        chat_history_.push_back({{"role", "system"}, {"content",
-            "你是星宝，陪伴孤独症小朋友的桌面机器人。温柔简短，直接执行请求不反问。"
-            "只返回JSON，不含Markdown：{\"reply\":\"回复\",\"emotion\":\"情绪\",\"action\":\"动作\",\"duration\":秒}"
-            "emotion: ZhongXing/KaiXin/JingYa/NanGuo/ShengQi/KongJu"
-            "action: stop/forward/backward/left/right，duration最大10秒"
-            "转圈=left,5秒；前进=forward,2秒；后退=backward,2秒；左/右转=left/right,3秒"
-        }});
+        : serial_(serial), web_(web), chat_state_(ChatState::kWaiting),
+          voice_threshold_(AppConfig::kVoiceThreshold),
+          silence_threshold_(AppConfig::kSilenceThreshold),
+          silence_limit_ms_(AppConfig::kSilenceLimitMs) {
+        chat_history_.push_back({{"role", "system"}, {"content", BuildPersonaSystemContent("companion")}});
         LoadConversationMemory();
+        LoadVoiceParamsFromDisk();
+        LoadPersonaConfigFromDisk();
         std::cerr << "[Dialog] 两条独立链路: baidu=百度ASR+百度TTS+DeepSeek；local=124.222.205.168 全链路，互不切换\n";
     }
     void Start() { worker_thread_ = std::thread(&DialogSystem::AudioLoop, this); }
@@ -560,6 +590,65 @@ public:
     bool IsMuted() const { return muted_.load(); }
     void SetMuted(bool m) { muted_.store(m); }
     void ToggleMuted() { muted_.store(!muted_.load()); }
+
+    std::string GetPersonaPresetId() const {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return persona_preset_id_;
+    }
+    int GetLlmMaxTokens() const { return llm_max_tokens_.load(); }
+
+    /** GET 空 body：返回 preset、max_tokens、完整 system；POST JSON 可更新 preset / max_tokens */
+    std::string HandlePersonaConfigHttp(const std::string& body) {
+        if (body.empty()) {
+            std::lock_guard<std::mutex> lk(mtx_);
+            json out;
+            out["ok"]            = true;
+            out["preset"]        = persona_preset_id_;
+            out["max_tokens"]    = llm_max_tokens_.load();
+            out["system_prompt"] = chat_history_.empty() ? "" : chat_history_[0].value("content", "");
+            return out.dump();
+        }
+        bool        changed = false;
+        std::string preset_copy;
+        int         mt_copy = 300;
+        json        out;
+        try {
+            auto p = json::parse(body);
+            std::lock_guard<std::mutex> lk(mtx_);
+            if (p.contains("preset")) {
+                std::string raw = p["preset"].is_string() ? p["preset"].get<std::string>() : "";
+                persona_preset_id_ = NormalizePersonaPreset(raw);
+                if (!chat_history_.empty())
+                    chat_history_[0] = {{"role", "system"}, {"content", BuildPersonaSystemContent(persona_preset_id_)}};
+                changed = true;
+            }
+            if (p.contains("max_tokens")) {
+                int mt = 300;
+                if (p["max_tokens"].is_number_integer()) mt = p["max_tokens"].get<int>();
+                else if (p["max_tokens"].is_string()) mt = std::atoi(p["max_tokens"].get<std::string>().c_str());
+                mt = std::max(80, std::min(2048, mt));
+                llm_max_tokens_.store(mt);
+                changed = true;
+            }
+            preset_copy          = persona_preset_id_;
+            mt_copy              = llm_max_tokens_.load();
+            out["ok"]            = true;
+            out["preset"]        = persona_preset_id_;
+            out["max_tokens"]    = llm_max_tokens_.load();
+            out["system_prompt"] = chat_history_.empty() ? "" : chat_history_[0].value("content", "");
+        } catch (...) {
+            json err;
+            err["ok"]    = false;
+            err["error"] = "bad_json";
+            return err.dump();
+        }
+        if (changed) {
+            SavePersonaConfigToDisk(preset_copy, mt_copy);
+            std::cerr << "[Dialog] 星宝人设已更新: preset=" << preset_copy << " max_tokens=" << mt_copy << "\n";
+        }
+        return out.dump();
+    }
+
     std::string RunBaiduDeepseekDiagJson() const {
         json j;
         j["baidu_token_ok"] = false;
@@ -616,7 +705,7 @@ public:
 
         if (s == "?" || s == "help" || s == "backend" || s == "backend?" || s == "backend ?") {
             std::cerr << "[Console] 当前 backend=" << BackendModeName(mode)
-                      << "，输入: `1`(local) / `2`(baidu) / `toggle` 或 `backend baidu` / `backend local`\n";
+                      << "，输入: `1`(local) / `2`(baidu) / `toggle`\n";
             return;
         }
 
@@ -660,6 +749,59 @@ public:
     }
     void SetCurrentEmotion(const std::string& e) { std::lock_guard<std::mutex> lk(mtx_); current_emotion_ = e; }
     int GetMicRms() const { return mic_rms_.load(); }
+    int GetVoiceThreshold() const { return voice_threshold_.load(); }
+    int GetSilenceThreshold() const { return silence_threshold_.load(); }
+    int GetSilenceLimitMs() const { return silence_limit_ms_.load(); }
+
+    /** GET 空 body 仅查询；JSON 或查询串解析后更新并写入 ./data/voice_params.json */
+    std::string HandleVoiceParamsHttp(const std::string& body) {
+        json out;
+        auto fill = [&]() {
+            out["ok"]               = true;
+            out["voice_threshold"]  = voice_threshold_.load();
+            out["silence_threshold"] = silence_threshold_.load();
+            out["silence_limit_ms"] = silence_limit_ms_.load();
+            out["mic_rms"]          = mic_rms_.load();
+        };
+        if (body.empty()) {
+            fill();
+            return out.dump();
+        }
+        bool changed = false;
+        try {
+            auto j = json::parse(body);
+            if (j.contains("voice_threshold") && j["voice_threshold"].is_number_integer()) {
+                int v = j["voice_threshold"].get<int>();
+                v = std::max(50, std::min(4000, v));
+                voice_threshold_.store(v);
+                changed = true;
+            }
+            if (j.contains("silence_threshold") && j["silence_threshold"].is_number_integer()) {
+                int v = j["silence_threshold"].get<int>();
+                v = std::max(0, std::min(4000, v));
+                silence_threshold_.store(v);
+                changed = true;
+            }
+            if (j.contains("silence_limit_ms") && j["silence_limit_ms"].is_number_integer()) {
+                int v = j["silence_limit_ms"].get<int>();
+                v = std::max(200, std::min(8000, v));
+                silence_limit_ms_.store(v);
+                changed = true;
+            }
+        } catch (...) {
+            json err;
+            err["ok"] = false;
+            err["error"] = "bad_json";
+            err["voice_threshold"]  = voice_threshold_.load();
+            err["silence_threshold"] = silence_threshold_.load();
+            err["silence_limit_ms"] = silence_limit_ms_.load();
+            err["mic_rms"]          = mic_rms_.load();
+            return err.dump();
+        }
+        if (changed) SaveVoiceParamsToDisk();
+        fill();
+        return out.dump();
+    }
     int GetDialogTurnCount() const { return dialog_turn_count_.load(); }
     std::string GetRecentDialogEventsJson() const {
         std::lock_guard<std::mutex> lk(memory_mtx_);
@@ -694,6 +836,66 @@ public:
         return j.dump();
     }
 
+    /**
+     * Web 打字对话接口：
+     * body: {"text":"你好","mode":"chat"|"echo","speak":true|false}
+     * - chat: 走 LLM 生成 reply，并可触发动作/表情/TTS
+     * - echo: 不走 LLM，直接让星宝复述 text（可选 TTS）
+     */
+    std::string HandleTypedDialogHttp(const std::string& body) {
+        json out;
+        if (body.empty()) {
+            out["ok"] = false;
+            out["error"] = "empty_body";
+            return out.dump();
+        }
+        std::string text;
+        std::string mode = "chat";
+        bool speak = true;
+        try {
+            auto j = json::parse(body);
+            text = j.value("text", "");
+            mode = j.value("mode", "chat");
+            speak = j.value("speak", true);
+        } catch (...) {
+            out["ok"] = false;
+            out["error"] = "bad_json";
+            return out.dump();
+        }
+        // 最小安全限制：避免超长文本导致 LLM/TTS 卡死或刷屏
+        if ((int)text.size() > 400) text = text.substr(0, 400);
+        auto trim = [](std::string& x) {
+            while (!x.empty() && (x.back() == '\n' || x.back() == '\r' || x.back() == ' ' || x.back() == '\t')) x.pop_back();
+            size_t i = 0;
+            while (i < x.size() && (x[i] == ' ' || x[i] == '\t')) i++;
+            if (i) x.erase(0, i);
+        };
+        trim(text);
+        if (text.empty()) {
+            out["ok"] = false;
+            out["error"] = "empty_text";
+            return out.dump();
+        }
+        for (char& c : mode) c = (char)std::tolower((unsigned char)c);
+        if (mode != "chat" && mode != "echo") mode = "chat";
+
+        if (mode == "echo") {
+            // 复述模式：不打断现有记忆结构，但也要计入最近对话展示
+            AppendConversationMemory(text, text);
+            out["ok"] = true;
+            out["mode"] = "echo";
+            out["user"] = text;
+            out["reply"] = text;
+            if (speak && !IsMuted()) {
+                PlayAlertTts(text);
+            }
+            return out.dump();
+        }
+
+        // chat 模式：走与语音相同的 LLM+动作+表情逻辑（但不包含 ASR）
+        return ProcessUserTextAsDialogJson(text, speak);
+    }
+
 private:
     SerialManager* serial_;
     WebServer*     web_;
@@ -705,10 +907,15 @@ private:
     std::atomic<bool> muted_{true};
     std::atomic<bool> interrupt_{false};  // 打断标志
     std::vector<json> chat_history_;
-    std::mutex mtx_;
+    mutable std::mutex mtx_;
     std::string current_emotion_ = "ZhongXing";
     std::atomic<int> mic_rms_{0};
+    std::atomic<int> voice_threshold_;
+    std::atomic<int> silence_threshold_;
+    std::atomic<int> silence_limit_ms_;
     std::atomic<int> dialog_turn_count_{0};
+    std::string      persona_preset_id_{"companion"};
+    std::atomic<int> llm_max_tokens_{300};
     mutable std::mutex memory_mtx_;
     std::deque<std::pair<std::string, std::string>> recent_dialogs_;
     const std::string memory_file_ = "./data/dialog_memory.jsonl";
@@ -716,6 +923,69 @@ private:
     static long long NowEpochMs() {
         using namespace std::chrono;
         return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    }
+
+    void SavePersonaConfigToDisk(const std::string& preset, int max_tokens) {
+        try { std::filesystem::create_directories("./data"); } catch (...) {}
+        try {
+            json j;
+            j["preset"]     = preset;
+            j["max_tokens"] = max_tokens;
+            std::ofstream ofs("./data/persona_config.json");
+            if (ofs) ofs << j.dump(2);
+        } catch (...) {}
+    }
+
+    void LoadPersonaConfigFromDisk() {
+        std::ifstream ifs("./data/persona_config.json");
+        if (!ifs) return;
+        try {
+            json          j      = json::parse(std::string(std::istreambuf_iterator<char>(ifs), {}));
+            std::string   preset = j.value("preset", "companion");
+            int           mt     = j.value("max_tokens", 300);
+            mt                   = std::max(80, std::min(2048, mt));
+            std::lock_guard<std::mutex> lk(mtx_);
+            persona_preset_id_ = NormalizePersonaPreset(preset);
+            llm_max_tokens_.store(mt);
+            if (!chat_history_.empty())
+                chat_history_[0] = {{"role", "system"}, {"content", BuildPersonaSystemContent(persona_preset_id_)}};
+            std::cerr << "[Dialog] 已加载星宝人设 preset=" << persona_preset_id_ << " max_tokens=" << mt << "\n";
+        } catch (...) {}
+    }
+
+    void LoadVoiceParamsFromDisk() {
+        std::ifstream ifs("./data/voice_params.json");
+        if (!ifs) return;
+        try {
+            json j = json::parse(std::string(std::istreambuf_iterator<char>(ifs), {}));
+            if (j.contains("voice_threshold") && j["voice_threshold"].is_number_integer()) {
+                int v = j["voice_threshold"].get<int>();
+                voice_threshold_.store(std::max(50, std::min(4000, v)));
+            }
+            if (j.contains("silence_threshold") && j["silence_threshold"].is_number_integer()) {
+                int v = j["silence_threshold"].get<int>();
+                silence_threshold_.store(std::max(0, std::min(4000, v)));
+            }
+            if (j.contains("silence_limit_ms") && j["silence_limit_ms"].is_number_integer()) {
+                int v = j["silence_limit_ms"].get<int>();
+                silence_limit_ms_.store(std::max(200, std::min(8000, v)));
+            }
+            std::cerr << "[Dialog] 已加载语音门限 voice=" << voice_threshold_.load()
+                      << " silence_rms<=" << silence_threshold_.load()
+                      << " silence_ms=" << silence_limit_ms_.load() << "\n";
+        } catch (...) {}
+    }
+
+    void SaveVoiceParamsToDisk() {
+        try { std::filesystem::create_directories("./data"); } catch (...) {}
+        try {
+            json j;
+            j["voice_threshold"]   = voice_threshold_.load();
+            j["silence_threshold"] = silence_threshold_.load();
+            j["silence_limit_ms"]  = silence_limit_ms_.load();
+            std::ofstream ofs("./data/voice_params.json");
+            if (ofs) ofs << j.dump(2);
+        } catch (...) {}
     }
 
     void AppendConversationMemory(const std::string& user, const std::string& assistant) {
@@ -734,6 +1004,133 @@ private:
                 ofs << rec.dump() << "\n";
             }
         } catch (...) {}
+    }
+
+    std::string ProcessUserTextAsDialogJson(const std::string& user_text, bool speak) {
+        chat_state_ = ChatState::kThinking;
+        const NluBackendMode selected_mode = backend_mode_.load();
+        effective_backend_.store(selected_mode);
+        const NluBackendConfig* cfg = &GetBackendConfig(selected_mode);
+
+        std::string emotion; { std::lock_guard<std::mutex> lk(mtx_); emotion = current_emotion_; }
+        chat_history_.push_back({{"role", "user"}, {"content", "[情绪:" + emotion + "] " + user_text}});
+
+        std::vector<json> trimmed;
+        trimmed.push_back(chat_history_[0]);
+        int start = std::max(1, (int)chat_history_.size() - 6);
+        for (int i = start; i < (int)chat_history_.size(); i++)
+            trimmed.push_back(chat_history_[i]);
+
+        int max_tok = llm_max_tokens_.load(std::memory_order_relaxed);
+        max_tok     = std::max(80, std::min(2048, max_tok));
+
+        std::string llm_res;
+        if (selected_mode == NluBackendMode::kBaiduDeepseek) {
+            json req_body = {
+                {"model", "deepseek-chat"},
+                {"messages", trimmed},
+                {"max_tokens", max_tok},
+                {"temperature", 0.7}
+            };
+            std::cerr << "[LLM] DeepSeek(typed) 请求中...\n";
+            llm_res = HttpUtils::Post(
+                "https://api.deepseek.com/chat/completions",
+                req_body.dump(),
+                {"Content-Type: application/json", std::string("Authorization: Bearer ") + AppConfig::kDeepseekApiKey},
+                60);
+        } else {
+            json req_body = {
+                {"model", cfg->llm_model},
+                {"messages", trimmed},
+                {"max_tokens", max_tok},
+                {"temperature", 0.7},
+                {"chat_template_kwargs", {{"enable_thinking", false}}}
+            };
+            std::cerr << "[LLM] 自建接口(typed) 请求中...\n";
+            llm_res = HttpUtils::Post(cfg->llm_url, req_body.dump(), {"Content-Type: application/json"}, 20);
+        }
+
+        json out;
+        if (llm_res.empty() || llm_res.find("<html") != std::string::npos) {
+            out["ok"] = false;
+            out["error"] = "llm_failed";
+            chat_state_ = ChatState::kWaiting;
+            return out.dump();
+        }
+
+        try {
+            auto llm_json = json::parse(llm_res);
+            auto& msg = llm_json["choices"][0]["message"];
+            if (!msg.contains("content") || msg["content"].is_null()) {
+                out["ok"] = false;
+                out["error"] = "llm_no_content";
+                chat_state_ = ChatState::kWaiting;
+                return out.dump();
+            }
+            std::string ai_content = msg["content"].get<std::string>();
+
+            // 清理 Markdown 标记
+            if (ai_content.find("```") != std::string::npos) {
+                auto start = ai_content.find("{");
+                auto end   = ai_content.rfind("}");
+                if (start != std::string::npos && end != std::string::npos)
+                    ai_content = ai_content.substr(start, end - start + 1);
+            }
+
+            auto ai_json = json::parse(ai_content);
+            std::string reply_text = ai_json.value("reply", "");
+            std::string action     = ai_json.value("action", "stop");
+            std::string emo2       = ai_json.value("emotion", "ZhongXing");
+            float duration         = std::min(ai_json.value("duration", 0.0f), 10.0f);
+            if (reply_text.empty()) reply_text = "嗯嗯。";
+
+            if (!UserHasMotionIntent(user_text)) {
+                action = "stop";
+                duration = 0.0f;
+            }
+
+            if (web_) web_->PushEyeData(0, 0, emo2);
+
+            if (serial_ && action != "stop" && duration > 0) {
+                std::thread([this, action, duration]() {
+                    auto end_t = std::chrono::steady_clock::now()
+                                 + std::chrono::milliseconds((int)(duration * 1000));
+                    while (std::chrono::steady_clock::now() < end_t) {
+                        serial_->SendCommand(action);
+                        usleep(150000);
+                    }
+                    serial_->SendCommand("stop");
+                }).detach();
+            }
+
+            chat_history_.push_back({{"role", "assistant"}, {"content", ai_content}});
+            if (speak && !muted_.load() && !interrupt_) {
+                chat_state_ = ChatState::kSpeaking;
+                // 用异步播放，避免 HTTP 请求卡在播放时长上
+                std::string tts_text = reply_text;
+                if (selected_mode == NluBackendMode::kBaiduDeepseek) {
+                    std::string alsa = AppConfig::kAlsaPlayDevice;
+                    std::thread([tts_text, alsa]() { TtsPlayBaiduCloud(tts_text, alsa); }).detach();
+                } else {
+                    const char* tts_url = cfg->tts_url;
+                    std::thread([tts_text, tts_url]() { TtsPlay(tts_text, AppConfig::kAlsaPlayDevice, tts_url); }).detach();
+                }
+            }
+            AppendConversationMemory(user_text, reply_text);
+
+            out["ok"] = true;
+            out["mode"] = "chat";
+            out["user"] = user_text;
+            out["reply"] = reply_text;
+            out["emotion"] = emo2;
+            out["action"] = action;
+            out["duration"] = duration;
+        } catch (...) {
+            out["ok"] = false;
+            out["error"] = "parse_failed";
+        }
+        chat_state_ = ChatState::kWaiting;
+        return out.dump();
     }
 
     void LoadConversationMemory() {
@@ -798,9 +1195,8 @@ private:
         bool is_recording = false; int silence_ms = 0;
 
         while (true) {
-            // 关闭打断功能：thinking/speaking 期间不做麦克风打断检测
-            if (chat_state_ == ChatState::kSpeaking ||
-                chat_state_ == ChatState::kThinking) {
+            // 对话模式：thinking/speaking 不采音
+            if (chat_state_ == ChatState::kSpeaking || chat_state_ == ChatState::kThinking) {
                 usleep(10000);
                 continue;
             }
@@ -813,7 +1209,7 @@ private:
             int rms = sum / 512;
             mic_rms_ = rms;
 
-            if (!is_recording && rms > AppConfig::kVoiceThreshold) {
+            if (!is_recording && rms > voice_threshold_.load(std::memory_order_relaxed)) {
                 chat_state_ = ChatState::kListening;
                 is_recording = true;
                 record_buf.clear();
@@ -821,8 +1217,8 @@ private:
             }
             if (is_recording) {
                 record_buf.insert(record_buf.end(), buffer, buffer + 512);
-                silence_ms = (rms < AppConfig::kSilenceThreshold) ? silence_ms + 32 : 0;
-                if (silence_ms > AppConfig::kSilenceLimitMs) {
+                silence_ms = (rms < silence_threshold_.load(std::memory_order_relaxed)) ? silence_ms + 32 : 0;
+                if (silence_ms > silence_limit_ms_.load(std::memory_order_relaxed)) {
                     is_recording = false; silence_ms = 0;
                     std::cerr << "[Audio] 录音结束，" << record_buf.size() << " 采样\n";
                     if (record_buf.size() >= 16000) {
@@ -887,12 +1283,15 @@ private:
         for (int i = start; i < (int)chat_history_.size(); i++)
             trimmed.push_back(chat_history_[i]);
 
+        int max_tok = llm_max_tokens_.load(std::memory_order_relaxed);
+        max_tok     = std::max(80, std::min(2048, max_tok));
+
         std::string llm_res;
         if (selected_mode == NluBackendMode::kBaiduDeepseek) {
             json req_body = {
                 {"model", "deepseek-chat"},
                 {"messages", trimmed},
-                {"max_tokens", 300},
+                {"max_tokens", max_tok},
                 {"temperature", 0.7}
             };
             std::cerr << "[LLM] DeepSeek 请求中...\n";
@@ -905,7 +1304,7 @@ private:
             json req_body = {
                 {"model", cfg->llm_model},
                 {"messages", trimmed},
-                {"max_tokens", 300},
+                {"max_tokens", max_tok},
                 {"temperature", 0.7},
                 {"chat_template_kwargs", {{"enable_thinking", false}}}
             };

@@ -1,5 +1,6 @@
 #pragma once
 #include "../third_party/httplib.h"
+#include "../third_party/json.hpp"
 #include "config.hpp"
 #include "utils.hpp"
 #include <opencv2/opencv.hpp>
@@ -19,6 +20,8 @@
 
 namespace mambo {
 
+using json = nlohmann::json;
+
 class WebServer {
     httplib::Server svr;
     std::thread server_thread;
@@ -28,9 +31,13 @@ class WebServer {
     std::function<void(const std::string&)> mute_cmd_;
     std::function<std::string(const std::string&)> speaker_volume_http_;
     std::function<std::string(const std::string&)> speaker_debug_http_;
+    std::function<std::string(const std::string&)> voice_params_http_;
+    std::function<std::string(const std::string&)> persona_config_http_;
+    std::function<std::string(const std::string&)> typed_dialog_http_;
     std::function<std::string()> diag_baidu_deepseek_;
     std::function<std::string()> clear_memory_;
     std::function<std::string(const std::string&, const std::string&)> motion_mode_http_;
+    std::function<std::string()> object_library_reset_;
 
     std::mutex eye_mtx_;
     std::condition_variable eye_cv_;
@@ -92,9 +99,13 @@ public:
     void SetMuteCommandHandler(std::function<void(const std::string&)> cb) { mute_cmd_ = std::move(cb); }
     void SetSpeakerVolumeHandler(std::function<std::string(const std::string&)> cb) { speaker_volume_http_ = std::move(cb); }
     void SetSpeakerDebugHandler(std::function<std::string(const std::string&)> cb) { speaker_debug_http_ = std::move(cb); }
+    void SetVoiceParamsHandler(std::function<std::string(const std::string&)> cb) { voice_params_http_ = std::move(cb); }
+    void SetPersonaConfigHandler(std::function<std::string(const std::string&)> cb) { persona_config_http_ = std::move(cb); }
+    void SetTypedDialogHandler(std::function<std::string(const std::string&)> cb) { typed_dialog_http_ = std::move(cb); }
     void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
     void SetClearMemoryHandler(std::function<std::string()> cb) { clear_memory_ = std::move(cb); }
     void SetMotionModeHandler(std::function<std::string(const std::string&, const std::string&)> cb) { motion_mode_http_ = std::move(cb); }
+    void SetObjectLibraryResetHandler(std::function<std::string()> cb) { object_library_reset_ = std::move(cb); }
     void PushEyeData(float nx, float ny, const std::string& emotion) {
         { std::lock_guard<std::mutex> lk(eye_mtx_);
           eye_emotion_ = emotion;
@@ -131,6 +142,7 @@ public:
     void Start(SerialManager* serial) {
         running_ = true;
         svr.set_mount_point("/", "./eyes-ui/dist");
+        svr.set_mount_point("/alerts", "./data/alerts");
 
         svr.Options(".*", [](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", "*");
@@ -523,6 +535,54 @@ public:
             handle_volume_debug(value, res);
         });
 
+        // 麦克风唤醒阈值 / 静音结束：GET 查询；GET 带 query 或 POST JSON 更新
+        // GET  /api/v1/audio/wake
+        // GET  /api/v1/audio/wake?voice_threshold=350&silence_limit_ms=1200
+        // POST /api/v1/audio/wake {"voice_threshold":350,"silence_limit_ms":1200,"silence_threshold":180}
+        auto wake_body_from_req = [](const httplib::Request& req) -> std::string {
+            if (!req.body.empty()) return req.body;
+            bool any = false;
+            std::string j = "{";
+            auto add_int = [&](const char* key) {
+                if (!req.has_param(key)) return;
+                if (any) j += ",";
+                any = true;
+                j += "\"";
+                j += key;
+                j += "\":";
+                j += req.get_param_value(key);
+            };
+            add_int("voice_threshold");
+            add_int("silence_threshold");
+            add_int("silence_limit_ms");
+            if (!any) return "";
+            j += "}";
+            return j;
+        };
+        auto handle_wake = [this, wake_body_from_req](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!voice_params_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            res.set_content(voice_params_http_(wake_body_from_req(req)), "application/json");
+        };
+        svr.Get("/api/v1/audio/wake", handle_wake);
+        svr.Post("/api/v1/audio/wake", handle_wake);
+
+        auto handle_persona = [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!persona_config_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            res.set_content(persona_config_http_(req.body), "application/json");
+        };
+        svr.Get("/api/v1/dialog/persona", handle_persona);
+        svr.Post("/api/v1/dialog/persona", handle_persona);
+
         svr.Get("/diag/baidu_deepseek", [this](const httplib::Request&, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
             if (!diag_baidu_deepseek_) { res.status = 503; res.set_content("{\"ok\":false}", "application/json"); return; }
@@ -543,6 +603,11 @@ public:
             ApplyNoCacheHeaders(res);
             if (!clear_memory_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
             res.set_content(clear_memory_(), "application/json");
+        });
+        svr.Post("/api/v1/vision/object_library/reset", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!object_library_reset_) { res.status = 503; res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json"); return; }
+            res.set_content(object_library_reset_(), "application/json");
         });
 
         // 简易控制页
@@ -576,6 +641,42 @@ public:
             res.set_header("Content-Type", "text/html; charset=utf-8");
             res.set_content(html, "text/html");
         });
+
+        // ── 打字对话页 /chat ─────────────────────────────────────
+        svr.Get("/chat", [this](const httplib::Request&, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            std::string html = ReadFile("./src/chat_typed.html");
+            if (html.empty()) {
+                res.status = 503;
+                res.set_content("chat_typed.html not found", "text/plain");
+                return;
+            }
+            res.set_header("Content-Type", "text/html; charset=utf-8");
+            res.set_content(html, "text/html");
+        });
+
+        // Web 打字对话 API
+        // POST /api/v1/dialog/text {"text":"你好","mode":"chat"|"echo","speak":true}
+        auto handle_typed_dialog = [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!typed_dialog_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            std::string body = req.body;
+            if (body.empty() && req.has_param("text")) {
+                // 兼容 GET/POST query（调试用）
+                json j;
+                j["text"] = req.get_param_value("text");
+                if (req.has_param("mode")) j["mode"] = req.get_param_value("mode");
+                if (req.has_param("speak")) j["speak"] = (req.get_param_value("speak") != "0");
+                body = j.dump();
+            }
+            res.set_content(typed_dialog_http_(body), "application/json");
+        };
+        svr.Post("/api/v1/dialog/text", handle_typed_dialog);
+        svr.Get("/api/v1/dialog/text", handle_typed_dialog);
 
         encoder_thread = std::thread([this]() { VideoEncodeLoop(); });
         server_thread  = std::thread([this]() { svr.listen(AppConfig::kWebHost, AppConfig::kWebPort); });
