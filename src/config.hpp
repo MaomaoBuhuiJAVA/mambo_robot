@@ -50,6 +50,17 @@ struct AppConfig {
     static constexpr const char* kLocalBackendHostname = "124.222.205.168";
     /** 若希望用域名访问但解析失败，可填 IPv4；当前已直连 IP 时可留空 */
     static constexpr const char* kLocalBackendIpOverride = "";
+
+    // ===== 统一监护事件上报 =====
+    static constexpr bool kMonitorEventIngestEnabled = true;
+    static constexpr const char* kMonitorEventBaseUrl = "http://124.222.205.168:8089";
+    static constexpr const char* kMonitorEventPath = "/app/public/monitor/events";
+    static constexpr const char* kMonitorEventAccessKey = "xinxing-monitor-key-2026";
+    static constexpr long long kMonitorChildId = 2036013232947302400LL;
+    static constexpr long long kMonitorDeviceId = 2038596373160538000LL;
+    static constexpr int kMonitorEventTimeoutSec = 6;
+    static constexpr int kMonitorVisionMinIntervalMs = 12000;
+    static constexpr int kMonitorSensorMinIntervalMs = 8000;
 };
 
 

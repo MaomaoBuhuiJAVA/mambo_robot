@@ -65,6 +65,169 @@ void SaveObjectLibraryToFile(const std::unordered_map<int, int>& counts) {
         if (ofs) ofs << j.dump(2);
     } catch (...) {}
 }
+
+std::string BuildMonitorTimestamp() {
+    auto t = std::time(nullptr);
+    std::tm tmv{};
+#if defined(_WIN32)
+    localtime_s(&tmv, &t);
+#else
+    localtime_r(&t, &tmv);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmv);
+    return buf;
+}
+
+std::string BuildMonitorEventUrl() {
+    std::string base = mambo::AppConfig::kMonitorEventBaseUrl ? mambo::AppConfig::kMonitorEventBaseUrl : "";
+    std::string path = mambo::AppConfig::kMonitorEventPath ? mambo::AppConfig::kMonitorEventPath : "";
+    if (!base.empty() && !path.empty() && base.back() == '/' && path.front() == '/') {
+        return base.substr(0, base.size() - 1) + path;
+    }
+    if (!base.empty() && !path.empty() && base.back() != '/' && path.front() != '/') {
+        return base + "/" + path;
+    }
+    return base + path;
+}
+
+std::string MapVisionEmotionToMonitorEvent(const std::string& emotion) {
+    if (emotion == "ShengQi") return "irritable_expression";
+    if (emotion == "MiMang") return "low_attention";
+    if (emotion == "NanGuo" || emotion == "KongJu" || emotion == "YanWu") return "negative_emotion";
+    return "";
+}
+
+int MonitorConfidenceForEvent(const std::string& event_type) {
+    if (event_type == "negative_emotion") return 84;
+    if (event_type == "irritable_expression") return 88;
+    if (event_type == "low_attention") return 80;
+    if (event_type == "agitation_high") return 90;
+    return 75;
+}
+
+std::string BuildVisionSummary(const mambo::FaceResult& face, const std::string& event_type) {
+    if (event_type == "negative_emotion") return "视觉识别到负向情绪：" + face.emotion;
+    if (event_type == "irritable_expression") return "视觉识别到烦躁表情：" + face.emotion;
+    if (event_type == "low_attention") return "视觉识别到专注下降：" + face.emotion;
+    return "视觉识别到监护事件";
+}
+
+class MonitorEventReporter {
+public:
+    MonitorEventReporter() : endpoint_(BuildMonitorEventUrl()) {
+    }
+
+    void ReportVisionIfNeeded(const std::vector<mambo::FaceResult>& faces) {
+        if (faces.empty()) return;
+        const auto& face = faces.front();
+        const std::string event_type = MapVisionEmotionToMonitorEvent(face.emotion);
+        if (event_type.empty()) return;
+
+        nlohmann::json payload;
+        payload["summary"] = BuildVisionSummary(face, event_type);
+        payload["emotion"] = face.emotion;
+        payload["faceName"] = face.name;
+        payload["matchScore"] = face.score;
+        if (event_type == "low_attention") {
+            payload["durationSec"] = 6;
+        }
+
+        TryReport("vision", event_type, MonitorConfidenceForEvent(event_type), payload,
+            mambo::AppConfig::kMonitorVisionMinIntervalMs);
+    }
+
+    void ReportSensorAlertIfNeeded(const std::string& alert, const mambo::SerialManager::Esp32Data& esp) {
+        if (alert != "agitated") return;
+
+        nlohmann::json payload;
+        payload["summary"] = "传感器识别到躁动升高告警";
+        payload["alert"] = alert;
+        payload["radarDist"] = esp.radar_dist;
+        payload["radarEnergy"] = esp.radar_energy;
+        payload["durationSec"] = 5;
+
+        TryReport("sensor", "agitation_high", MonitorConfidenceForEvent("agitation_high"), payload,
+            mambo::AppConfig::kMonitorSensorMinIntervalMs);
+    }
+
+private:
+    bool IsEnabled() const {
+        return mambo::AppConfig::kMonitorEventIngestEnabled
+            && mambo::AppConfig::kMonitorChildId > 0
+            && mambo::AppConfig::kMonitorDeviceId > 0
+            && mambo::AppConfig::kMonitorEventAccessKey[0] != '\0'
+            && !endpoint_.empty();
+    }
+
+    bool ShouldSend(const std::string& key, int min_interval_ms) {
+        const auto now = std::chrono::steady_clock::now();
+        auto it = last_sent_at_.find(key);
+        if (it != last_sent_at_.end()) {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count();
+            if (elapsed < min_interval_ms) return false;
+        }
+        last_sent_at_[key] = now;
+        return true;
+    }
+
+    void TryReport(const std::string& source, const std::string& event_type, int confidence,
+                   const nlohmann::json& payload, int min_interval_ms) {
+        if (!IsEnabled()) return;
+        const std::string dedup_key = source + "::" + event_type;
+        if (!ShouldSend(dedup_key, min_interval_ms)) return;
+
+        nlohmann::json body;
+        body["childId"] = mambo::AppConfig::kMonitorChildId;
+        body["deviceId"] = mambo::AppConfig::kMonitorDeviceId;
+        body["source"] = source;
+        body["eventType"] = event_type;
+        body["confidence"] = confidence;
+        body["timestamp"] = BuildMonitorTimestamp();
+        body["payload"] = payload;
+
+        std::vector<std::string> headers = {
+            "Content-Type: application/json",
+            "Accept: application/json",
+            std::string("X-Monitor-Access-Key: ") + mambo::AppConfig::kMonitorEventAccessKey
+        };
+        const std::string request_body = body.dump();
+        const std::string url = endpoint_;
+
+        std::thread([url, request_body, headers, source, event_type]() {
+            std::string response = mambo::HttpUtils::Post(
+                url,
+                request_body,
+                headers,
+                mambo::AppConfig::kMonitorEventTimeoutSec
+            );
+            if (response.empty()) {
+                std::cerr << "[MonitorEvent] 上报失败: " << source << "/" << event_type << " 响应为空\n";
+                return;
+            }
+            try {
+                nlohmann::json result = nlohmann::json::parse(response);
+                const int code = result.value("code", 500);
+                if (code == 200) {
+                    std::string status_code = "-";
+                    if (result.contains("data") && result["data"].is_object()) {
+                        status_code = result["data"].value("code", "-");
+                    }
+                    std::cerr << "[MonitorEvent] 上报成功: " << source << "/" << event_type
+                              << " -> status=" << status_code << "\n";
+                    return;
+                }
+                std::cerr << "[MonitorEvent] 上报失败: " << source << "/" << event_type
+                          << " -> " << result.value("msg", response) << "\n";
+            } catch (...) {
+                std::cerr << "[MonitorEvent] 返回无法解析: " << response << "\n";
+            }
+        }).detach();
+    }
+
+    std::string endpoint_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_sent_at_;
+};
 }  // namespace
 
 static int ExtractPercentFromAmixer(const std::string& text) {
@@ -443,6 +606,7 @@ int main() {
     mambo::SerialManager serial(mambo::AppConfig::kSerialPort);
     mambo::WebServer web;
     web.Start(&serial);
+    MonitorEventReporter monitor_event_reporter;
     std::atomic<bool> auto_obstacle_enabled{false};
     std::atomic<bool> follow_mode_enabled{false};
     // 跟随模式：对自动指令做简单平滑，避免频繁“点刹”
@@ -859,6 +1023,7 @@ int main() {
         // 轮询串口接收 ESP32 上报
         serial.Poll();
         auto esp = serial.GetEsp32Data();
+        monitor_event_reporter.ReportVisionIfNeeded(faces);
         // 把当前是否在运动告知对话系统（用于“运动时不录音”开关）
         bool moving = esp.valid && !(esp.act == "stop" || esp.act == "blocked" || esp.act.empty());
         dialog.SetIsMoving(moving);
@@ -934,6 +1099,7 @@ int main() {
                 web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
                 playAlert("别晃了，星宝好晕呀~");
             } else if (alert == "agitated") {
+                monitor_event_reporter.ReportSensorAlertIfNeeded(alert, esp);
                 web.PushEyeData(0, 0, "Worried"); // 担心表情
                 playAlert("小朋友，星宝在这里陪你，别着急哦~");
             }
