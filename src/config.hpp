@@ -56,8 +56,8 @@ struct AppConfig {
     static constexpr const char* kMonitorEventBaseUrl = "http://10.2.3.86:8089";
     static constexpr const char* kMonitorEventPath = "/app/public/monitor/events";
     static constexpr const char* kMonitorEventAccessKey = "xinxing-monitor-key-2026";
-    static constexpr long long kMonitorChildId = 2036013232947302400LL;
-    static constexpr long long kMonitorDeviceId = 2038596373160538000LL;
+    static constexpr long long kMonitorChildId = 2036013232947302402LL;
+    static constexpr long long kMonitorDeviceId = 2038596373160538114LL;
     static constexpr int kMonitorEventTimeoutSec = 6;
     static constexpr int kMonitorVisionMinIntervalMs = 12000;
     static constexpr int kMonitorSensorMinIntervalMs = 8000;
