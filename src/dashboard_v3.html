@@ -138,6 +138,11 @@
           <input id="speaker-volume-range" type="range" min="0" max="100" value="70" class="w-24 accent-yellow-400" />
           <span id="speaker-volume-text" class="text-[11px] text-on-surface-variant w-10 text-right">70%</span>
         </div>
+        <div class="flex items-center gap-2 px-3 py-2 rounded-full bg-surface-container">
+          <span class="material-symbols-outlined text-sm text-on-surface-variant">speed</span>
+          <input id="tts-tempo-range" type="range" min="60" max="140" value="100" class="w-24 accent-yellow-400" />
+          <span id="tts-tempo-text" class="text-[11px] text-on-surface-variant w-12 text-right">1.00x</span>
+        </div>
         <div class="flex flex-col gap-1 px-3 py-1.5 rounded-2xl bg-surface-container border border-white/5 max-w-[260px] shrink-0">
           <div class="flex items-center gap-2 text-[10px] text-on-surface-variant">
             <span class="material-symbols-outlined text-sm text-primary">mic</span>
@@ -163,6 +168,9 @@
           <span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1;">face</span>
           <span id="face-status" class="text-xs font-semibold">人脸识别: 已激活</span>
         </div>
+      <button id="btn-record-block" class="flex items-center gap-2 px-3 py-2 rounded-full bg-surface-container text-on-surface-variant hover:text-primary transition-colors text-xs">
+        <span class="material-symbols-outlined text-sm">hearing_disabled</span><span>运动时不录音: OFF</span>
+      </button>
         <div class="flex gap-2">
           <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">settings</span>
           <span class="material-symbols-outlined text-slate-400 p-2 hover:text-primary transition-colors cursor-pointer">battery_charging_full</span>
@@ -884,6 +892,15 @@
       if (Array.isArray(d.alert_events)) renderAlertEvents(d.alert_events);
       if (d.fps != null) $("cam-badge").textContent = "LIVE FEED • " + d.fps + " FPS";
       paintWakeFromStatus(d);
+      if (typeof d.tts_tempo === "number") {
+        const val = Math.round(d.tts_tempo * 100);
+        const clamped = Math.max(60, Math.min(140, val));
+        $("tts-tempo-range").value = String(clamped);
+        $("tts-tempo-text").textContent = (clamped / 100).toFixed(2) + "x";
+      }
+      if (typeof d.block_record_when_moving === "boolean") {
+        paintRecordBlock(d.block_record_when_moving);
+      }
       if (Array.isArray(d.object_library)) {
         lastObjectLibrary = d.object_library;
         const libModal = $("object-library-modal");
@@ -975,6 +992,58 @@
           }
         } else logSystem("音量设置: " + (j.volume ?? v) + "%");
       } catch (_) {}
+    }
+    function paintRecordBlock(on) {
+      const btn = $("btn-record-block");
+      if (!btn) return;
+      btn.querySelector("span:nth-child(2)").textContent = "运动时不录音: " + (on ? "ON" : "OFF");
+      btn.className = "flex items-center gap-2 px-3 py-2 rounded-full text-xs transition-colors " +
+        (on ? "bg-secondary/20 text-secondary" : "bg-surface-container text-on-surface-variant hover:text-primary");
+    }
+    async function fetchTtsParams() {
+      try {
+        const res = await fetch("/api/v1/audio/tts");
+        const j = await res.json();
+        if (j && j.tempo != null) {
+          const val = Math.round(j.tempo * 100);
+          const clamped = Math.max(60, Math.min(140, val));
+          $("tts-tempo-range").value = String(clamped);
+          $("tts-tempo-text").textContent = (clamped / 100).toFixed(2) + "x";
+        }
+      } catch (_) {}
+    }
+    async function setTtsTempoFromSlider() {
+      const r = $("tts-tempo-range");
+      const val = Math.max(60, Math.min(140, Number(r.value || 100)));
+      const tempo = val / 100;
+      $("tts-tempo-text").textContent = tempo.toFixed(2) + "x";
+      try {
+        const res = await fetch("/api/v1/audio/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tempo }),
+        });
+        const j = await res.json();
+        if (j && j.ok) logSystem("语速已设置为 " + (j.tempo ?? tempo).toFixed(2) + "x");
+      } catch (_) {
+        logSystem("语速设置失败");
+      }
+    }
+    async function toggleRecordBlock() {
+      try {
+        const res = await fetch("/api/v1/audio/record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "toggle" }),
+        });
+        const j = await res.json();
+        if (j && j.ok) {
+          paintRecordBlock(!!j.block_when_moving);
+          logSystem("运动时不录音: " + (j.block_when_moving ? "开启" : "关闭"));
+        }
+      } catch (_) {
+        logSystem("运动时不录音切换失败");
+      }
     }
     function toggleObstacle() {
       fetch("/api/v1/control/mode?name=obstacle&value=toggle")
@@ -1148,6 +1217,7 @@
         .catch(() => logSystem("物品库清零失败"));
     });
     $("btn-mute").addEventListener("click", toggleMute);
+    $("btn-record-block").addEventListener("click", toggleRecordBlock);
     $("btn-clear-memory").addEventListener("click", clearMemory);
     $("btn-obstacle").addEventListener("click", toggleObstacle);
     $("btn-follow").addEventListener("click", toggleFollow);
@@ -1193,6 +1263,11 @@
       sendMotor("speed:" + v);
       logSystem("速度调整: " + v);
     });
+    $("tts-tempo-range").addEventListener("input", () => {
+      const val = Math.max(60, Math.min(140, Number($("tts-tempo-range").value || 100)));
+      $("tts-tempo-text").textContent = (val / 100).toFixed(2) + "x";
+    });
+    $("tts-tempo-range").addEventListener("change", setTtsTempoFromSlider);
     window.addEventListener("keydown", (e) => {
       if (e.repeat) return;
       if (e.key === "w") startMove("forward");
@@ -1216,6 +1291,7 @@
     pollState();
     fetchSpeakerVolume();
     fetchWakeParams();
+    fetchTtsParams();
     setInterval(pollState, 1400);
     setInterval(fetchSpeakerVolume, 5000);
     setInterval(updateGyroStatus, 600);

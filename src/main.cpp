@@ -445,6 +445,11 @@ int main() {
     web.Start(&serial);
     std::atomic<bool> auto_obstacle_enabled{false};
     std::atomic<bool> follow_mode_enabled{false};
+    // 跟随模式：对自动指令做简单平滑，避免频繁“点刹”
+    std::string auto_drive_last_cmd = "stop";
+    std::string auto_drive_filtered_cmd = "stop";
+    std::string auto_drive_last_raw = "stop";
+    int auto_drive_same_cnt = 0;
 
     mambo::VisionEngine vision;
     mambo::DialogSystem dialog(&serial, &web);
@@ -479,6 +484,8 @@ int main() {
     web.SetVoiceParamsHandler([&dialog](const std::string& body) { return dialog.HandleVoiceParamsHttp(body); });
     web.SetPersonaConfigHandler([&dialog](const std::string& body) { return dialog.HandlePersonaConfigHttp(body); });
     web.SetTypedDialogHandler([&dialog](const std::string& body) { return dialog.HandleTypedDialogHttp(body); });
+    web.SetTtsParamsHandler([&dialog](const std::string& body) { return dialog.HandleTtsParamsHttp(body); });
+    web.SetRecordBlockHandler([&dialog](const std::string& body) { return dialog.HandleRecordBlockHttp(body); });
     std::mutex object_lib_mtx;
     std::unordered_map<int, int> object_library_counts;
     LoadObjectLibraryFromFile(object_library_counts);
@@ -691,7 +698,6 @@ int main() {
     auto last_object_lib_disk_save = std::chrono::steady_clock::now() - std::chrono::hours(1);
     auto last_fall_alert = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     auto last_auto_drive = std::chrono::steady_clock::now() - std::chrono::seconds(10);
-    std::string auto_drive_last_cmd = "stop";
     auto last_scissors_alarm = std::chrono::steady_clock::now() - std::chrono::seconds(30);
 
     struct AlertEvent {
@@ -853,6 +859,9 @@ int main() {
         // 轮询串口接收 ESP32 上报
         serial.Poll();
         auto esp = serial.GetEsp32Data();
+        // 把当前是否在运动告知对话系统（用于“运动时不录音”开关）
+        bool moving = esp.valid && !(esp.act == "stop" || esp.act == "blocked" || esp.act.empty());
+        dialog.SetIsMoving(moving);
 
         // 自动避障 + 跟随控制（优先避障）
         const auto now_ctrl = std::chrono::steady_clock::now();
@@ -881,15 +890,31 @@ int main() {
                 decided = true;
             }
             if (auto_modes_on) {
-                if (auto_cmd != auto_drive_last_cmd) {
-                    serial.SendCommand(auto_cmd);
-                    auto_drive_last_cmd = auto_cmd;
-                } else if (decided && auto_cmd != "stop") {
-                    serial.SendCommand(auto_cmd); // 心跳续命，避免 ESP32 超时自动停
+                // 1) 对原始 auto_cmd 做“连续确认”过滤，减少因人脸框抖动频繁切换
+                if (auto_cmd == auto_drive_last_raw) {
+                    auto_drive_same_cnt++;
+                } else {
+                    auto_drive_same_cnt = 1;
+                    auto_drive_last_raw = auto_cmd;
+                }
+                if (auto_drive_same_cnt >= 3) { // 连续 3 次相同才真正采纳
+                    auto_drive_filtered_cmd = auto_cmd;
+                    auto_drive_same_cnt = 0;
+                }
+
+                // 2) 基于平滑后的指令下发
+                if (auto_drive_filtered_cmd != auto_drive_last_cmd) {
+                    serial.SendCommand(auto_drive_filtered_cmd);
+                    auto_drive_last_cmd = auto_drive_filtered_cmd;
+                } else if (decided && auto_drive_filtered_cmd != "stop") {
+                    serial.SendCommand(auto_drive_filtered_cmd); // 心跳续命，避免 ESP32 超时自动停
                 }
             } else if (auto_drive_last_cmd != "stop") {
                 serial.SendCommand("stop");
                 auto_drive_last_cmd = "stop";
+                auto_drive_filtered_cmd = "stop";
+                auto_drive_last_raw = "stop";
+                auto_drive_same_cnt = 0;
             }
             last_auto_drive = now_ctrl;
         }

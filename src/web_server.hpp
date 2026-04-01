@@ -34,6 +34,8 @@ class WebServer {
     std::function<std::string(const std::string&)> voice_params_http_;
     std::function<std::string(const std::string&)> persona_config_http_;
     std::function<std::string(const std::string&)> typed_dialog_http_;
+    std::function<std::string(const std::string&)> tts_params_http_;
+    std::function<std::string(const std::string&)> record_block_http_;
     std::function<std::string()> diag_baidu_deepseek_;
     std::function<std::string()> clear_memory_;
     std::function<std::string(const std::string&, const std::string&)> motion_mode_http_;
@@ -102,6 +104,8 @@ public:
     void SetVoiceParamsHandler(std::function<std::string(const std::string&)> cb) { voice_params_http_ = std::move(cb); }
     void SetPersonaConfigHandler(std::function<std::string(const std::string&)> cb) { persona_config_http_ = std::move(cb); }
     void SetTypedDialogHandler(std::function<std::string(const std::string&)> cb) { typed_dialog_http_ = std::move(cb); }
+    void SetTtsParamsHandler(std::function<std::string(const std::string&)> cb) { tts_params_http_ = std::move(cb); }
+    void SetRecordBlockHandler(std::function<std::string(const std::string&)> cb) { record_block_http_ = std::move(cb); }
     void SetDiagBaiduDeepseekHandler(std::function<std::string()> cb) { diag_baidu_deepseek_ = std::move(cb); }
     void SetClearMemoryHandler(std::function<std::string()> cb) { clear_memory_ = std::move(cb); }
     void SetMotionModeHandler(std::function<std::string(const std::string&, const std::string&)> cb) { motion_mode_http_ = std::move(cb); }
@@ -570,6 +574,48 @@ public:
         };
         svr.Get("/api/v1/audio/wake", handle_wake);
         svr.Post("/api/v1/audio/wake", handle_wake);
+
+        // TTS 语速参数：GET 查询；POST/GET 带参数更新
+        auto handle_tts_params = [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!tts_params_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            std::string body = req.body;
+            if (body.empty()) {
+                if (req.has_param("tempo")) {
+                    json j;
+                    j["tempo"] = std::atof(req.get_param_value("tempo").c_str());
+                    body = j.dump();
+                }
+            }
+            res.set_content(tts_params_http_(body), "application/json");
+        };
+        svr.Get("/api/v1/audio/tts", handle_tts_params);
+        svr.Post("/api/v1/audio/tts", handle_tts_params);
+
+        // 运动时是否屏蔽录音
+        auto handle_record_block = [this](const httplib::Request& req, httplib::Response& res) {
+            ApplyNoCacheHeaders(res);
+            if (!record_block_http_) {
+                res.status = 503;
+                res.set_content("{\"ok\":false,\"error\":\"no_handler\"}", "application/json");
+                return;
+            }
+            std::string body = req.body;
+            if (body.empty()) {
+                json j;
+                if (req.has_param("mode")) j["mode"] = req.get_param_value("mode");
+                if (req.has_param("block_when_moving"))
+                    j["block_when_moving"] = (req.get_param_value("block_when_moving") != "0");
+                if (!j.empty()) body = j.dump();
+            }
+            res.set_content(record_block_http_(body), "application/json");
+        };
+        svr.Get("/api/v1/audio/record", handle_record_block);
+        svr.Post("/api/v1/audio/record", handle_record_block);
 
         auto handle_persona = [this](const httplib::Request& req, httplib::Response& res) {
             ApplyNoCacheHeaders(res);

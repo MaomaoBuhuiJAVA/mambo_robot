@@ -412,6 +412,9 @@ static std::string AsrRecognize(const std::vector<short>& audio_data, const char
     return ctx.result;
 }
 
+// ===== 全局 TTS 参数 =====
+static std::atomic<float> g_tts_tempo{1.0f};  // 语速倍数，0.6~1.4 左右
+
 // ===== TTS（libcurl 下载 PCM，aplay 播放）=====
 static void TtsPlay(const std::string& text, const std::string& alsa_device, const char* tts_url) {
     // 用 libcurl 直接下载，避免 system(curl) 的 shell 注入风险
@@ -432,8 +435,11 @@ static void TtsPlay(const std::string& text, const std::string& alsa_device, con
     fwrite(pcm_data.data(), 1, pcm_data.size(), f);
     fclose(f);
 
+    float tempo = std::max(0.6f, std::min(1.4f, g_tts_tempo.load(std::memory_order_relaxed)));
+    char tempo_buf[64];
+    snprintf(tempo_buf, sizeof(tempo_buf), " tempo %.2f", tempo);
     std::string play_cmd = "sox -t raw -r 24000 -e signed -b 16 -c 1 /tmp/tts.pcm "
-                           "-t raw - vol 0.4 | "
+                           "-t raw -" + std::string(tempo_buf) + " vol 0.4 | "
                            "aplay -q -D " + alsa_device +
                            " -f S16_LE -r 24000 -c 1 >/dev/null 2>&1";
     system(play_cmd.c_str());
@@ -469,8 +475,11 @@ static void TtsPlayBaiduCloud(const std::string& text, const std::string& alsa_d
     fwrite(pcm.data(), 1, pcm.size(), f);
     fclose(f);
 
+    float tempo = std::max(0.6f, std::min(1.4f, g_tts_tempo.load(std::memory_order_relaxed)));
+    char tempo_buf[64];
+    snprintf(tempo_buf, sizeof(tempo_buf), " tempo %.2f", tempo);
     std::string play_cmd = "sox -t raw -r 16000 -e signed -b 16 -c 1 /tmp/tts_baidu.pcm "
-                           "-t raw - vol 0.5 | "
+                           "-t raw -" + std::string(tempo_buf) + " vol 0.5 | "
                            "aplay -q -D " + alsa_device +
                            " -f S16_LE -r 16000 -c 1 >/dev/null 2>&1";
     system(play_cmd.c_str());
@@ -590,6 +599,10 @@ public:
     bool IsMuted() const { return muted_.load(); }
     void SetMuted(bool m) { muted_.store(m); }
     void ToggleMuted() { muted_.store(!muted_.load()); }
+    void SetIsMoving(bool moving) { is_moving_.store(moving, std::memory_order_relaxed); }
+    bool GetIsMoving() const { return is_moving_.load(std::memory_order_relaxed); }
+    void SetBlockRecordWhenMoving(bool on) { block_record_when_moving_.store(on, std::memory_order_relaxed); }
+    bool GetBlockRecordWhenMoving() const { return block_record_when_moving_.load(std::memory_order_relaxed); }
 
     std::string GetPersonaPresetId() const {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -802,6 +815,30 @@ public:
         fill();
         return out.dump();
     }
+    // 语速参数：{"tempo":1.0}，范围约 0.6~1.4
+    std::string HandleTtsParamsHttp(const std::string& body) {
+        json out;
+        if (body.empty()) {
+            out["ok"] = true;
+            out["tempo"] = g_tts_tempo.load(std::memory_order_relaxed);
+            return out.dump();
+        }
+        try {
+            auto j = json::parse(body);
+            if (j.contains("tempo")) {
+                float t = j["tempo"].get<float>();
+                t = std::max(0.6f, std::min(1.4f, t));
+                g_tts_tempo.store(t, std::memory_order_relaxed);
+            }
+            out["ok"] = true;
+            out["tempo"] = g_tts_tempo.load(std::memory_order_relaxed);
+        } catch (...) {
+            out["ok"] = false;
+            out["error"] = "bad_json";
+            out["tempo"] = g_tts_tempo.load(std::memory_order_relaxed);
+        }
+        return out.dump();
+    }
     int GetDialogTurnCount() const { return dialog_turn_count_.load(); }
     std::string GetRecentDialogEventsJson() const {
         std::lock_guard<std::mutex> lk(memory_mtx_);
@@ -896,6 +933,40 @@ public:
         return ProcessUserTextAsDialogJson(text, speak);
     }
 
+    // 录音屏蔽参数：{"block_when_moving":true}
+    std::string HandleRecordBlockHttp(const std::string& body) {
+        json out;
+        if (body.empty()) {
+            out["ok"] = true;
+            out["block_when_moving"] = block_record_when_moving_.load(std::memory_order_relaxed);
+            return out.dump();
+        }
+        try {
+            auto j = json::parse(body);
+            if (j.contains("block_when_moving")) {
+                bool on = j["block_when_moving"].get<bool>();
+                block_record_when_moving_.store(on, std::memory_order_relaxed);
+            } else if (j.contains("mode")) {
+                std::string mode = j["mode"].get<std::string>();
+                if (mode == "toggle") {
+                    block_record_when_moving_.store(!block_record_when_moving_.load(std::memory_order_relaxed),
+                                                    std::memory_order_relaxed);
+                } else if (mode == "on") {
+                    block_record_when_moving_.store(true, std::memory_order_relaxed);
+                } else if (mode == "off") {
+                    block_record_when_moving_.store(false, std::memory_order_relaxed);
+                }
+            }
+            out["ok"] = true;
+            out["block_when_moving"] = block_record_when_moving_.load(std::memory_order_relaxed);
+        } catch (...) {
+            out["ok"] = false;
+            out["error"] = "bad_json";
+            out["block_when_moving"] = block_record_when_moving_.load(std::memory_order_relaxed);
+        }
+        return out.dump();
+    }
+
 private:
     SerialManager* serial_;
     WebServer*     web_;
@@ -914,6 +985,8 @@ private:
     std::atomic<int> silence_threshold_;
     std::atomic<int> silence_limit_ms_;
     std::atomic<int> dialog_turn_count_{0};
+    std::atomic<bool> block_record_when_moving_{false};
+    std::atomic<bool> is_moving_{false};
     std::string      persona_preset_id_{"companion"};
     std::atomic<int> llm_max_tokens_{300};
     mutable std::mutex memory_mtx_;
@@ -1208,6 +1281,13 @@ private:
             for (int i = 0; i < 512; i++) sum += std::abs(buffer[i]);
             int rms = sum / 512;
             mic_rms_ = rms;
+
+            // 选项：机器人运动时暂停录音，避免晃动/噪声触发
+            if (block_record_when_moving_.load(std::memory_order_relaxed) &&
+                is_moving_.load(std::memory_order_relaxed)) {
+                usleep(10000);
+                continue;
+            }
 
             if (!is_recording && rms > voice_threshold_.load(std::memory_order_relaxed)) {
                 chat_state_ = ChatState::kListening;
