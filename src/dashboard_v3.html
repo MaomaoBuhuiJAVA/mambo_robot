@@ -1265,15 +1265,64 @@
       $("tts-tempo-text").textContent = (val / 100).toFixed(2) + "x";
     });
     $("tts-tempo-range").addEventListener("change", setTtsTempoFromSlider);
+    const keyWASD = { w: false, a: false, s: false, d: false };
+    function motorActionFromKeys() {
+      const { w, a, s, d } = keyWASD;
+      if (w && a) return "forward_left";
+      if (w && d) return "forward_right";
+      if (s && a) return "backward_left";
+      if (s && d) return "backward_right";
+      if (w) return "forward";
+      if (s) return "backward";
+      if (a) return "left";
+      if (d) return "right";
+      return "stop";
+    }
+    function syncMotorFromWASD() {
+      if (
+        document.activeElement &&
+        (document.activeElement.tagName === "INPUT" ||
+          document.activeElement.tagName === "TEXTAREA" ||
+          document.activeElement.isContentEditable)
+      )
+        return false;
+      const act = motorActionFromKeys();
+      if (act === "stop") stopMove();
+      else startMove(act);
+      return true;
+    }
     window.addEventListener("keydown", (e) => {
       if (e.repeat) return;
-      if (e.key === "w") startMove("forward");
-      if (e.key === "s") startMove("backward");
-      if (e.key === "a") startMove("left");
-      if (e.key === "d") startMove("right");
-      if (e.key === " ") stopMove();
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (k === "w" || k === "a" || k === "s" || k === "d") {
+        e.preventDefault();
+        if (k === "w") keyWASD.w = true;
+        if (k === "a") keyWASD.a = true;
+        if (k === "s") keyWASD.s = true;
+        if (k === "d") keyWASD.d = true;
+        syncMotorFromWASD();
+      } else if (k === " ") {
+        e.preventDefault();
+        stopMove();
+      }
     });
-    window.addEventListener("keyup", (e) => { if (["w","a","s","d"," "].includes(e.key)) stopMove(); });
+    window.addEventListener("keyup", (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (k === "w") keyWASD.w = false;
+      else if (k === "a") keyWASD.a = false;
+      else if (k === "s") keyWASD.s = false;
+      else if (k === "d") keyWASD.d = false;
+      else return;
+      syncMotorFromWASD();
+    });
+    window.addEventListener("blur", () => {
+      keyWASD.w = keyWASD.a = keyWASD.s = keyWASD.d = false;
+      stopMove();
+    });
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeObjectLibraryModal();

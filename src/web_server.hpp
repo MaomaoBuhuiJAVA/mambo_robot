@@ -702,7 +702,7 @@ public:
         });
 
         // Web 打字对话 API
-        // POST /api/v1/dialog/text {"text":"你好","mode":"chat"|"echo","speak":true}
+        // POST /api/v1/dialog/text {"text":"你好","mode":"chat"|"echo","speak":true,"emotion":"auto|ZhongXing|..."}
         auto handle_typed_dialog = [this](const httplib::Request& req, httplib::Response& res) {
             ApplyNoCacheHeaders(res);
             if (!typed_dialog_http_) {

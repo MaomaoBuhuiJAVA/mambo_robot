@@ -780,6 +780,11 @@ public:
         }
     }
     void SetCurrentEmotion(const std::string& e) { std::lock_guard<std::mutex> lk(mtx_); current_emotion_ = e; }
+    /** 打字对话页锁定：非空时状态里的「人脸情绪」与眼睛表情不被视觉识别覆盖，直至选「自动」 */
+    std::string GetTypedEmotionLock() const {
+        std::lock_guard<std::mutex> lk(typed_emo_mtx_);
+        return typed_emotion_lock_;
+    }
     int GetMicRms() const { return mic_rms_.load(); }
     int GetVoiceThreshold() const { return voice_threshold_.load(); }
     int GetSilenceThreshold() const { return silence_threshold_.load(); }
@@ -894,10 +899,30 @@ public:
 
     /**
      * Web 打字对话接口：
-     * body: {"text":"你好","mode":"chat"|"echo","speak":true|false}
+     * body: ...,"emotion":"ZhongXing"|"KaiXin"|... 可选；指定则打字对话期间眼睛/UI 用该情绪（覆盖 LLM 返回的 emotion），空或 auto 则跟随大模型
      * - chat: 走 LLM 生成 reply，并可触发动作/表情/TTS
-     * - echo: 不走 LLM，直接让星宝复述 text（可选 TTS）
+     * - echo: 不走 LLM，直接让星宝复述 text（可选 TTS）；pretend_user 存在时写入记忆为 用户/星宝 一轮
      */
+    static std::string NormalizeTypedChatEmotion(std::string raw) {
+        auto trim = [](std::string& x) {
+            while (!x.empty() && (x.back() == '\n' || x.back() == '\r' || x.back() == ' ' || x.back() == '\t')) x.pop_back();
+            size_t i = 0;
+            while (i < x.size() && (x[i] == ' ' || x[i] == '\t')) i++;
+            if (i) x.erase(0, i);
+        };
+        trim(raw);
+        for (char& c : raw) c = (char)std::tolower((unsigned char)c);
+        if (raw.empty() || raw == "auto") return "";
+        static const char* kAllowed[] = {
+            "ZhongXing", "KaiXin", "JingYa", "NanGuo", "ShengQi", "KongJu"};
+        for (const char* canon : kAllowed) {
+            std::string al = canon;
+            for (char& c : al) c = (char)std::tolower((unsigned char)c);
+            if (raw == al) return canon;
+        }
+        return "";
+    }
+
     std::string HandleTypedDialogHttp(const std::string& body) {
         json out;
         if (body.empty()) {
@@ -908,11 +933,21 @@ public:
         std::string text;
         std::string mode = "chat";
         bool speak = true;
+        std::string pretend_user;
+        std::string emotion_raw;
+        bool        emotion_key_present = false;
         try {
             auto j = json::parse(body);
             text = j.value("text", "");
             mode = j.value("mode", "chat");
             speak = j.value("speak", true);
+            if (j.contains("pretend_user") && j["pretend_user"].is_string())
+                pretend_user = j["pretend_user"].get<std::string>();
+            if (j.contains("emotion")) {
+                emotion_key_present = true;
+                if (j["emotion"].is_string())
+                    emotion_raw = j["emotion"].get<std::string>();
+            }
         } catch (...) {
             out["ok"] = false;
             out["error"] = "bad_json";
@@ -927,29 +962,77 @@ public:
             if (i) x.erase(0, i);
         };
         trim(text);
+        if (pretend_user.size() > 400) pretend_user = pretend_user.substr(0, 400);
+        trim(pretend_user);
+        if (emotion_key_present) {
+            std::string et = emotion_raw;
+            trim(et);
+            std::string el = et;
+            for (char& c : el) c = (char)std::tolower((unsigned char)c);
+            if (el.empty() || el == "auto")
+                SetCurrentEmotion("ZhongXing");
+        }
+        const std::string emo_lock = NormalizeTypedChatEmotion(emotion_raw);
+        if (!emo_lock.empty())
+            SetCurrentEmotion(emo_lock);
+
+        {
+            std::lock_guard<std::mutex> lk(typed_emo_mtx_);
+            if (emotion_key_present) {
+                if (emo_lock.empty())
+                    typed_emotion_lock_.clear();
+                else
+                    typed_emotion_lock_ = emo_lock;
+            }
+        }
+
         if (text.empty()) {
+            if (emotion_key_present || !emo_lock.empty()) {
+                std::string ep = emo_lock;
+                if (ep.empty()) {
+                    std::lock_guard<std::mutex> lk(mtx_);
+                    ep = current_emotion_;
+                }
+                if (web_) web_->PushEyeData(0, 0, ep);
+                out["ok"]      = true;
+                out["mode"]    = "emotion_lock";
+                out["emotion"] = ep;
+                return out.dump();
+            }
             out["ok"] = false;
             out["error"] = "empty_text";
             return out.dump();
         }
+
         for (char& c : mode) c = (char)std::tolower((unsigned char)c);
         if (mode != "chat" && mode != "echo") mode = "chat";
 
         if (mode == "echo") {
-            // 复述模式：不打断现有记忆结构，但也要计入最近对话展示
-            AppendConversationMemory(text, text);
+            if (pretend_user.empty())
+                AppendConversationMemory(text, text);
+            else
+                AppendConversationMemory(pretend_user, text);
             out["ok"] = true;
             out["mode"] = "echo";
-            out["user"] = text;
+            out["user"] = pretend_user.empty() ? text : pretend_user;
             out["reply"] = text;
+            {
+                std::string ep = emo_lock;
+                if (ep.empty()) {
+                    std::lock_guard<std::mutex> lk(mtx_);
+                    ep = current_emotion_;
+                }
+                out["emotion"] = ep;
+                if (web_) web_->PushEyeData(0, 0, ep);
+            }
             if (speak && !IsMuted()) {
                 PlayAlertTts(text);
             }
             return out.dump();
         }
 
-        // chat 模式：走与语音相同的 LLM+动作+表情逻辑（但不包含 ASR）
-        return ProcessUserTextAsDialogJson(text, speak);
+        // chat 模式：走与语音相同的 LLM+动作/表情/TTS；emo_lock 非空时覆盖 LLM 表情
+        return ProcessUserTextAsDialogJson(text, speak, emo_lock);
     }
 
     // 录音屏蔽参数：{"block_when_moving":true}
@@ -1009,6 +1092,8 @@ private:
     std::string      persona_preset_id_{"companion"};
     std::atomic<int> llm_max_tokens_{300};
     mutable std::mutex memory_mtx_;
+    mutable std::mutex typed_emo_mtx_;
+    std::string        typed_emotion_lock_;
     std::deque<std::pair<std::string, std::string>> recent_dialogs_;
     const std::string memory_file_ = "./data/dialog_memory.jsonl";
 
@@ -1098,7 +1183,8 @@ private:
         } catch (...) {}
     }
 
-    std::string ProcessUserTextAsDialogJson(const std::string& user_text, bool speak) {
+    std::string ProcessUserTextAsDialogJson(const std::string& user_text, bool speak,
+                                            const std::string& emotion_override = "") {
         chat_state_ = ChatState::kThinking;
         const NluBackendMode selected_mode = backend_mode_.load();
         effective_backend_.store(selected_mode);
@@ -1181,6 +1267,8 @@ private:
                 duration = 0.0f;
             }
 
+            if (!emotion_override.empty())
+                emo2 = emotion_override;
             if (web_) web_->PushEyeData(0, 0, emo2);
 
             if (serial_ && action != "stop" && duration > 0) {

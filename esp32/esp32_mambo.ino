@@ -152,8 +152,39 @@ void setMotor(int l1, int l2, int r1, int r2, int s) {
     digitalWrite(IN3, r1); digitalWrite(IN4, r2); analogWrite(ENB, s);
 }
 
+/** 左右轮独立 PWM：用于前进/后退时带弧（斜向） */
+void setMotorLR(int l1, int l2, int r1, int r2, int speedL, int speedR) {
+    digitalWrite(IN1, l1); digitalWrite(IN2, l2); analogWrite(ENA, constrain(speedL, 0, 255));
+    digitalWrite(IN3, r1); digitalWrite(IN4, r2); analogWrite(ENB, constrain(speedR, 0, 255));
+}
+
+/** 内侧轮转速占 full 的百分比（越小弯越急） */
+const int kArcInnerPercent = 52;
+
 inline void driveForward(int s)  { if (!kSwapForwardBackward) setMotor(1, 0, 1, 0, s); else setMotor(0, 1, 0, 1, s); }
 inline void driveBackward(int s) { if (!kSwapForwardBackward) setMotor(0, 1, 0, 1, s); else setMotor(1, 0, 1, 0, s); }
+
+// 斜向：一侧全速一侧减速，边前进/后退边转向（非原地转圈）
+inline void driveForwardArcLeft(int s) {
+    int inr = s * kArcInnerPercent / 100;
+    if (!kSwapForwardBackward) setMotorLR(1, 0, 1, 0, inr, s);
+    else                       setMotorLR(0, 1, 0, 1, inr, s);
+}
+inline void driveForwardArcRight(int s) {
+    int inr = s * kArcInnerPercent / 100;
+    if (!kSwapForwardBackward) setMotorLR(1, 0, 1, 0, s, inr);
+    else                       setMotorLR(0, 1, 0, 1, s, inr);
+}
+inline void driveBackwardArcLeft(int s) {
+    int inr = s * kArcInnerPercent / 100;
+    if (!kSwapForwardBackward) setMotorLR(0, 1, 0, 1, inr, s);
+    else                       setMotorLR(1, 0, 1, 0, inr, s);
+}
+inline void driveBackwardArcRight(int s) {
+    int inr = s * kArcInnerPercent / 100;
+    if (!kSwapForwardBackward) setMotorLR(0, 1, 0, 1, s, inr);
+    else                       setMotorLR(1, 0, 1, 0, s, inr);
+}
 
 /** 前红外：朝前运动（前、左转、右转）时禁止前进方向落空 */
 inline bool cliffFront() { return digitalRead(CLIFF_FRONT); }
@@ -167,23 +198,28 @@ void handleCommand(String cmd) {
     if (cmd.length() == 0) return;
     if (cmd != "stop") last_cmd_time = millis();
 
-    if (cliffFront() && (cmd == "forward" || cmd == "left" || cmd == "right")) {
+    if (cliffFront() && (cmd == "forward" || cmd == "left" || cmd == "right" ||
+                         cmd == "forward_left" || cmd == "forward_right")) {
         setMotor(0, 0, 0, 0, 0);
         current_action = "blocked";
         return;
     }
 
-    if (cliffBack() && cmd == "backward") {
+    if (cliffBack() && (cmd == "backward" || cmd == "backward_left" || cmd == "backward_right")) {
         setMotor(0, 0, 0, 0, 0);
         current_action = "blocked";
         return;
     }
 
-    if      (cmd == "forward")  { driveForward(motor_speed);  current_action = "forward"; }
-    else if (cmd == "backward") { driveBackward(motor_speed); current_action = "backward"; }
-    else if (cmd == "left")     { setMotor(0, 1, 1, 0, motor_speed); current_action = "left"; }
-    else if (cmd == "right")    { setMotor(1, 0, 0, 1, motor_speed); current_action = "right"; }
-    else if (cmd == "stop")     { setMotor(0, 0, 0, 0, 0);           current_action = "stop"; }
+    if      (cmd == "forward")         { driveForward(motor_speed);             current_action = "forward"; }
+    else if (cmd == "backward")        { driveBackward(motor_speed);            current_action = "backward"; }
+    else if (cmd == "forward_left")    { driveForwardArcLeft(motor_speed);      current_action = "forward_left"; }
+    else if (cmd == "forward_right")   { driveForwardArcRight(motor_speed);     current_action = "forward_right"; }
+    else if (cmd == "backward_left")   { driveBackwardArcLeft(motor_speed);     current_action = "backward_left"; }
+    else if (cmd == "backward_right")  { driveBackwardArcRight(motor_speed);    current_action = "backward_right"; }
+    else if (cmd == "left")           { setMotor(0, 1, 1, 0, motor_speed);     current_action = "left"; }
+    else if (cmd == "right")          { setMotor(1, 0, 0, 1, motor_speed);     current_action = "right"; }
+    else if (cmd == "stop")           { setMotor(0, 0, 0, 0, 0);               current_action = "stop"; }
     else if (cmd.startsWith("speed:")) {
         motor_speed = constrain(cmd.substring(6).toInt(), 0, 255);
     }

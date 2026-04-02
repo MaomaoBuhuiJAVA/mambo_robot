@@ -848,7 +848,10 @@ int main() {
                 // 人脸/情绪更新
                 if (frame_count % kFaceRate == 0) {
                     slow_faces = faces;
-                    if (!faces.empty()) dialog.SetCurrentEmotion(faces[0].emotion);
+                    if (!faces.empty()) {
+                        if (dialog.GetTypedEmotionLock().empty())
+                            dialog.SetCurrentEmotion(faces[0].emotion);
+                    }
                 }
             }
 
@@ -1195,9 +1198,13 @@ int main() {
             json += ",\"persona_preset\":\"" + std::string(dialog.GetPersonaPresetId()) + "\"";
             json += ",\"llm_max_tokens\":" + std::to_string(dialog.GetLlmMaxTokens());
             if (!faces.empty()) {
+                std::string face_emo = faces[0].emotion;
+                std::string emo_lock = dialog.GetTypedEmotionLock();
+                if (!emo_lock.empty())
+                    face_emo = emo_lock;
                 char buf[128];
                 snprintf(buf, sizeof(buf), ",\"face\":{\"name\":\"%s\",\"emotion\":\"%s\",\"score\":%.2f}",
-                         faces[0].name.c_str(), faces[0].emotion.c_str(), faces[0].score);
+                         faces[0].name.c_str(), face_emo.c_str(), faces[0].score);
                 json += buf;
             } else {
                 json += ",\"face\":null";
@@ -1256,11 +1263,16 @@ int main() {
                       << "  静音:" << (dialog.IsMuted() ? "ON" : "OFF")
                       << "  🎤RMS:" << dialog.GetMicRms()
                       << "(阈值:" << dialog.GetVoiceThreshold() << ")";
-            if (!faces.empty())
-                std::cout << "  人脸:[" << faces[0].name << "|" << faces[0].emotion
+            if (!faces.empty()) {
+                std::string fe = faces[0].emotion;
+                std::string lk = dialog.GetTypedEmotionLock();
+                if (!lk.empty())
+                    fe = lk;
+                std::cout << "  人脸:[" << faces[0].name << "|" << fe
                           << "|" << std::fixed << std::setprecision(2) << faces[0].score << "]";
-            else
+            } else {
                 std::cout << "  人脸:无";
+            }
             if (!objects.empty()) {
                 std::cout << "  物品:";
                 for (const auto& o : objects)

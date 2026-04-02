@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="dark" lang="zh-CN">
+<html class="dark" lang="zh-CN" style="color-scheme: dark;">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -34,6 +34,22 @@
       color: #e4e3fe;
     }
     .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 420, "GRAD" 0, "opsz" 24; }
+    #demo-details summary::-webkit-details-marker { display: none; }
+    /* 原生 select 下拉在部分浏览器默认白底浅字，强制深色可读 */
+    #sel-emotion {
+      color: #e8e7ff;
+      background-color: #16172a;
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+    #sel-emotion:focus {
+      outline: none;
+      border-color: rgba(253, 216, 53, 0.45);
+      box-shadow: 0 0 0 2px rgba(253, 216, 53, 0.15);
+    }
+    #sel-emotion option {
+      background-color: #1a1c30;
+      color: #e8e7ff;
+    }
   </style>
 </head>
 <body class="h-screen flex">
@@ -75,21 +91,58 @@
         </div>
         <input id="toggle-speak" type="checkbox" class="h-5 w-5 rounded accent-yellow-400" checked />
       </label>
+
+      <div class="p-3 rounded-xl border border-white/10 bg-white/5 space-y-2">
+        <div class="text-sm font-bold">表情情绪</div>
+        <div class="text-xs text-slate-400">锁定后控制台/App 里「识别情绪」与眼睛都保持此项，不再被摄像头覆盖；选「自动」恢复视觉识别。</div>
+        <select id="sel-emotion" class="w-full rounded-lg px-2 py-2 text-sm">
+          <option value="auto">自动（大模型）</option>
+          <option value="ZhongXing">中性 ZhongXing</option>
+          <option value="KaiXin">开心 KaiXin</option>
+          <option value="JingYa">惊讶 JingYa</option>
+          <option value="NanGuo">难过 NanGuo</option>
+          <option value="ShengQi">生气 ShengQi</option>
+          <option value="KongJu">害怕 KongJu</option>
+        </select>
+      </div>
     </div>
   </aside>
 
   <main class="flex-1 h-full flex flex-col min-w-0">
-    <header class="px-6 py-4 border-b border-white/5 bg-black/10">
+    <header class="shrink-0 px-6 py-4 border-b border-white/5 bg-black/10">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <div class="text-lg font-black text-yellow-300">打字对话</div>
-          <div class="text-xs text-slate-400">POST `/api/v1/dialog/text`</div>
+          <div class="text-xs text-slate-400">演示模式：echo + <code class="text-slate-500">pretend_user</code> 记录对用户的一轮</div>
         </div>
         <button id="btn-clear" class="px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition text-sm font-semibold">
           清空本页
         </button>
       </div>
     </header>
+
+    <details id="demo-details" class="shrink-0 border-b border-white/5 bg-black/15" open>
+      <summary class="px-6 py-3 cursor-pointer list-none flex items-center justify-between gap-3 text-sm font-bold text-secondary hover:bg-white/5 transition">
+        <span class="flex items-center gap-2 min-w-0">
+          <span class="material-symbols-outlined text-lg shrink-0">smart_display</span>
+          <span class="truncate">演示模式 · 预设对话流程，点一下播一步</span>
+        </span>
+        <span id="demo-step-badge" class="text-xs font-mono text-slate-500 shrink-0">步骤 0/0</span>
+      </summary>
+      <div class="px-6 pb-4 space-y-3 text-sm border-t border-white/5">
+        <p class="text-xs text-slate-500 pt-3">每行：用户台词（气泡） + 星宝要说的（复述 TTS，不调大模型）。侧栏请打开「语音播报」。</p>
+        <div id="demo-rows" class="space-y-2 max-h-48 overflow-y-auto pr-1"></div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="demo-add-row" class="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-semibold">加一行</button>
+          <button type="button" id="demo-del-row" class="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-semibold">删末行</button>
+          <button type="button" id="demo-save" class="px-3 py-1.5 rounded-lg border border-secondary/30 bg-secondary/10 text-secondary text-xs font-semibold">保存到本机</button>
+          <button type="button" id="demo-reset-idx" class="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-semibold">从第一步重来</button>
+        </div>
+        <button type="button" id="demo-next" class="w-full py-3 rounded-xl bg-secondary/25 border border-secondary/40 text-secondary font-black hover:bg-secondary/35 transition text-sm">
+          下一步 — 显示用户这句并播报星宝
+        </button>
+      </div>
+    </details>
 
     <section class="flex-1 min-h-0 overflow-y-auto px-6 py-4" id="chat-log"></section>
 
@@ -116,6 +169,40 @@
     const echo = $("toggle-echo");
     const speak = $("toggle-speak");
     const hint = $("hint");
+    const EMOTION_STORAGE = "mambo_chat_emotion_sel";
+
+    function emotionPayload() {
+      const sel = $("sel-emotion");
+      const v = sel ? String(sel.value || "auto").trim() : "auto";
+      return { emotion: v || "auto" };
+    }
+
+    async function pingEmotionOnly() {
+      try {
+        await fetch("/api/v1/dialog/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            Object.assign({ text: "", mode: "echo", speak: false }, emotionPayload()),
+          ),
+        });
+      } catch (_) {}
+    }
+
+    function initEmotionSelect() {
+      const sel = $("sel-emotion");
+      if (!sel) return;
+      try {
+        const s = localStorage.getItem(EMOTION_STORAGE);
+        if (s && Array.from(sel.options).some((o) => o.value === s)) sel.value = s;
+      } catch (_) {}
+      sel.addEventListener("change", () => {
+        try {
+          localStorage.setItem(EMOTION_STORAGE, sel.value);
+        } catch (_) {}
+        pingEmotionOnly();
+      });
+    }
 
     function addBubble(role, text) {
       const wrap = document.createElement("div");
@@ -133,7 +220,7 @@
 
     async function sendText(text) {
       const mode = echo.checked ? "echo" : "chat";
-      const body = { text, mode, speak: !!speak.checked };
+      const body = Object.assign({ text, mode, speak: !!speak.checked }, emotionPayload());
       const res = await fetch("/api/v1/dialog/text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +234,143 @@
       }
       addBubble("assistant", data.reply || "…");
     }
+
+    const DEMO_STORAGE = "mambo_chat_demo_flow";
+    const demoRowsEl = $("demo-rows");
+    const demoBadge = $("demo-step-badge");
+    let demoStepIdx = 0;
+
+    function collectDemoSteps() {
+      const rows = demoRowsEl.querySelectorAll(".demo-row");
+      const steps = [];
+      rows.forEach((row) => {
+        const u = (row.querySelector(".demo-user")?.value || "").trim();
+        const a = (row.querySelector(".demo-assistant")?.value || "").trim();
+        if (u || a) steps.push({ user: u, assistant: a });
+      });
+      return steps;
+    }
+
+    function renderDemoBadge() {
+      const n = collectDemoSteps().length;
+      if (n === 0) demoBadge.textContent = "未配置";
+      else if (demoStepIdx >= n) demoBadge.textContent = "已播完 " + n + " 步";
+      else demoBadge.textContent = "下一拍 " + (demoStepIdx + 1) + "/" + n;
+    }
+
+    function addDemoRow(user, assistant) {
+      const row = document.createElement("div");
+      row.className = "demo-row grid grid-cols-1 sm:grid-cols-2 gap-2";
+      row.innerHTML =
+        '<input type="text" class="demo-user rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-slate-100 text-sm placeholder:text-slate-600" placeholder="用户说什么" />' +
+        '<input type="text" class="demo-assistant rounded-lg bg-white/5 border border-secondary/20 px-3 py-2 text-slate-100 text-sm placeholder:text-slate-600" placeholder="星宝回复（播报）" />';
+      row.querySelector(".demo-user").value = user || "";
+      row.querySelector(".demo-assistant").value = assistant || "";
+      demoRowsEl.appendChild(row);
+      renderDemoBadge();
+    }
+
+    function saveDemoToStorage() {
+      const steps = collectDemoSteps();
+      try {
+        localStorage.setItem(DEMO_STORAGE, JSON.stringify(steps));
+      } catch (_) {}
+    }
+
+    function loadDemoFromStorage() {
+      demoRowsEl.innerHTML = "";
+      let steps = [];
+      try {
+        const raw = localStorage.getItem(DEMO_STORAGE);
+        if (raw) steps = JSON.parse(raw);
+      } catch (_) {}
+      if (!Array.isArray(steps) || steps.length === 0) {
+        addDemoRow("你好呀", "你好，我是星宝！");
+        addDemoRow("你叫什么", "我叫星宝，是你的小陪伴机器人。");
+        addDemoRow("", "今天我们一起玩一会儿好吗？");
+      } else {
+        steps.forEach((s) => addDemoRow(s.user || "", s.assistant || ""));
+      }
+      demoStepIdx = 0;
+      renderDemoBadge();
+    }
+
+    async function playDemoNext() {
+      const steps = collectDemoSteps();
+      if (steps.length === 0) {
+        hint.textContent = "请先填写至少一行的星宝回复";
+        return;
+      }
+      if (demoStepIdx >= steps.length) {
+        hint.textContent = "流程已结束，点「从第一步重来」可再演一遍";
+        return;
+      }
+      const s = steps[demoStepIdx];
+      if (!(s.assistant || "").trim()) {
+        hint.textContent = "当前步「星宝回复」为空，请填写后再点";
+        return;
+      }
+      const userShown = (s.user || "").trim() || "（演示 · 用户）";
+      addBubble("user", userShown);
+      hint.textContent = "播报中…";
+      try {
+        const res = await fetch("/api/v1/dialog/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            Object.assign(
+              {
+                text: (s.assistant || "").trim(),
+                mode: "echo",
+                speak: !!speak.checked,
+                pretend_user: userShown,
+              },
+              emotionPayload(),
+            ),
+          ),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data || data.ok !== true) {
+          const err = (data && (data.error || data.message)) ? (data.error || data.message) : ("http_" + res.status);
+          addBubble("assistant", "出错了：" + err);
+          return;
+        }
+        addBubble("assistant", data.reply || "…");
+        demoStepIdx++;
+        renderDemoBadge();
+        hint.textContent = demoStepIdx >= steps.length ? "本流程已播完" : "";
+      } finally {
+        if (hint.textContent === "播报中…") hint.textContent = "";
+      }
+    }
+
+    $("demo-add-row").addEventListener("click", () => {
+      addDemoRow("", "");
+      saveDemoToStorage();
+    });
+    $("demo-del-row").addEventListener("click", () => {
+      const rows = demoRowsEl.querySelectorAll(".demo-row");
+      if (rows.length) rows[rows.length - 1].remove();
+      demoStepIdx = 0;
+      renderDemoBadge();
+      saveDemoToStorage();
+    });
+    $("demo-save").addEventListener("click", () => {
+      saveDemoToStorage();
+      hint.textContent = "已保存";
+      setTimeout(() => {
+        if (hint.textContent === "已保存") hint.textContent = "";
+      }, 1500);
+    });
+    $("demo-reset-idx").addEventListener("click", () => {
+      demoStepIdx = 0;
+      renderDemoBadge();
+      hint.textContent = "";
+    });
+    $("demo-next").addEventListener("click", () => playDemoNext());
+    demoRowsEl.addEventListener("input", () => {
+      renderDemoBadge();
+    });
 
     const QUICK_PHRASES = ["你好呀", "好", "可以", "我想吃果果", "玩游戏", "你叫什么"];
     const quickBox = $("quick-phrases");
@@ -195,8 +419,13 @@
       input.focus();
     });
 
+    loadDemoFromStorage();
+    initEmotionSelect();
+    pingEmotionOnly();
+
     // welcome
-    addBubble("assistant", "你好呀，我是星宝。你可以直接打字和我聊天；打开“复述模式”后，我会把你输入的内容原样说出来。");
+    addBubble("assistant", "你好呀，我是星宝。你可以直接打字和我聊天；打开“复述模式”后，我会把你输入的内容原样说出来。侧栏可选「表情情绪」锁定眼睛表情，或选自动交给大模型。展开「演示模式」可编排固定对话流程。");
+
   </script>
 </body>
 </html>
