@@ -244,7 +244,7 @@ public:
         float ax = 0, ay = 0, az = 0;
         float gx = 0, gy = 0, gz = 0;
         bool  cliff = false, radar = false;
-        std::string alert;   // "cliff" / "fall" / "dizzy" / "agitated" / ""
+        std::string alert;   // cliff / dizzy / agitated
         std::string act = "stop";
         int   radar_dist   = 0;  // LD2402 目标距离（cm）
         int   radar_energy = 0;  // LD2402 运动能量总和
@@ -338,7 +338,7 @@ public:
     }
 
     // 消费警报（读一次后清除）
-    // 返回 "cliff"、"fall" 或 ""
+    // 返回 "cliff" 等
     std::string ConsumeAlert() {
         std::lock_guard<std::mutex> lk(rx_mtx_);
         if (!esp_data_.alert.empty()) {
@@ -354,8 +354,8 @@ public:
         return esp_data_;
     }
 
-    // 兼容旧接口，给 web_server 用
-    std::string GetEsp32Status() {
+    // 兼容旧接口，给 web_server 用；radar_energy 可由上位机按规则（静止+前方有人）再写入展示值
+    std::string GetEsp32Status(int radar_energy_for_json) {
         std::lock_guard<std::mutex> lk(rx_mtx_);
         if (!esp_data_.valid) return "";
         char buf[256];
@@ -370,7 +370,7 @@ public:
                  esp_data_.radar ? 1 : 0,
                  esp_data_.act.c_str(),
                  esp_data_.radar_dist,
-                 esp_data_.radar_energy);
+                 radar_energy_for_json);
         return buf;
     }
 };

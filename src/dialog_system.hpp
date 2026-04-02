@@ -414,9 +414,12 @@ static std::string AsrRecognize(const std::vector<short>& audio_data, const char
 
 // ===== 全局 TTS 参数 =====
 static std::atomic<float> g_tts_tempo{1.0f};  // 语速倍数，0.6~1.4 左右
+/** 所有 TTS/aplay 共用一把锁，避免多路异步播报同时抢 ALSA 设备 */
+static std::mutex g_tts_play_mtx;
 
 // ===== TTS（libcurl 下载 PCM，aplay 播放）=====
 static void TtsPlay(const std::string& text, const std::string& alsa_device, const char* tts_url) {
+    std::lock_guard<std::mutex> lock(g_tts_play_mtx);
     // 用 libcurl 直接下载，避免 system(curl) 的 shell 注入风险
     std::string body = "{\"text\":\"" + text + "\",\"character\":\"klee\"}";
     std::string pcm_data = HttpUtils::Post(
@@ -435,18 +438,27 @@ static void TtsPlay(const std::string& text, const std::string& alsa_device, con
     fwrite(pcm_data.data(), 1, pcm_data.size(), f);
     fclose(f);
 
+    // 不用 sox|aplay 管道：aplay 若立刻失败（设备错/被占用）会导致 sox 报 Broken pipe 且无声音
     float tempo = std::max(0.6f, std::min(1.4f, g_tts_tempo.load(std::memory_order_relaxed)));
-    char tempo_buf[64];
-    snprintf(tempo_buf, sizeof(tempo_buf), " tempo %.2f", tempo);
-    std::string play_cmd = "sox -t raw -r 24000 -e signed -b 16 -c 1 /tmp/tts.pcm "
-                           "-t raw -" + std::string(tempo_buf) + " vol 0.4 | "
-                           "aplay -q -D " + alsa_device +
-                           " -f S16_LE -r 24000 -c 1 >/dev/null 2>&1";
-    system(play_cmd.c_str());
+    const char* out_pcm = "/tmp/tts_play_24k.pcm";
+    char sox_cmd[512];
+    snprintf(sox_cmd, sizeof(sox_cmd),
+             "sox -t raw -r 24000 -e signed -b 16 -c 1 /tmp/tts.pcm "
+             "-t raw -r 24000 -e signed -b 16 -c 1 %s tempo %.2f vol 0.4",
+             out_pcm, tempo);
+    if (system(sox_cmd) != 0) {
+        std::cerr << "[TTS Error] sox 处理失败，检查是否安装 sox\n";
+        return;
+    }
+    std::string aplay_cmd = std::string("aplay -q -D ") + alsa_device +
+                            " -f S16_LE -r 24000 -c 1 " + out_pcm;
+    if (system(aplay_cmd.c_str()) != 0)
+        std::cerr << "[TTS Error] aplay 失败，请检查 config 中 kAlsaPlayDevice（aplay -l）及声卡是否被占用\n";
 }
 
 /** 百度语音合成（短文本）：PCM 16k 16bit mono（aue=4），与自建 TTS 无关 */
 static void TtsPlayBaiduCloud(const std::string& text, const std::string& alsa_device) {
+    std::lock_guard<std::mutex> lock(g_tts_play_mtx);
     std::string tok = BaiduAccessTokenCached();
     if (tok.empty()) {
         std::cerr << "[TTS/Baidu] 无 access_token\n";
@@ -476,13 +488,20 @@ static void TtsPlayBaiduCloud(const std::string& text, const std::string& alsa_d
     fclose(f);
 
     float tempo = std::max(0.6f, std::min(1.4f, g_tts_tempo.load(std::memory_order_relaxed)));
-    char tempo_buf[64];
-    snprintf(tempo_buf, sizeof(tempo_buf), " tempo %.2f", tempo);
-    std::string play_cmd = "sox -t raw -r 16000 -e signed -b 16 -c 1 /tmp/tts_baidu.pcm "
-                           "-t raw -" + std::string(tempo_buf) + " vol 0.5 | "
-                           "aplay -q -D " + alsa_device +
-                           " -f S16_LE -r 16000 -c 1 >/dev/null 2>&1";
-    system(play_cmd.c_str());
+    const char* out_pcm = "/tmp/tts_play_16k.pcm";
+    char sox_cmd[512];
+    snprintf(sox_cmd, sizeof(sox_cmd),
+             "sox -t raw -r 16000 -e signed -b 16 -c 1 /tmp/tts_baidu.pcm "
+             "-t raw -r 16000 -e signed -b 16 -c 1 %s tempo %.2f vol 0.5",
+             out_pcm, tempo);
+    if (system(sox_cmd) != 0) {
+        std::cerr << "[TTS/Baidu] sox 处理失败\n";
+        return;
+    }
+    std::string aplay_cmd = std::string("aplay -q -D ") + alsa_device +
+                            " -f S16_LE -r 16000 -c 1 " + out_pcm;
+    if (system(aplay_cmd.c_str()) != 0)
+        std::cerr << "[TTS/Baidu] aplay 失败，请检查 kAlsaPlayDevice 与声卡占用\n";
 }
 
 /** 星宝人设：与 JSON 输出约定拼接为完整 system 消息 */

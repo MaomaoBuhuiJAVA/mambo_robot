@@ -21,7 +21,9 @@ const int MAIN_WDT_TIMEOUT_S = 8;
 
 unsigned long last_send_time = 0;
 unsigned long last_cmd_time  = 0;
-const unsigned long CMD_TIMEOUT = 300;
+// 上位机通过 HTTP 约每 150ms 续命；300ms 时网络稍慢就会超时→电机断续「一卡一卡」。
+// 悬崖自动后退在 loop 里每圈刷新 last_cmd_time，不受此限，故更顺滑。
+const unsigned long CMD_TIMEOUT = 1000;
 
 int    motor_speed    = 220;
 String current_action = "stop";
@@ -32,7 +34,6 @@ const bool kSwapForwardBackward = true;
 // 警报只触发一次的标志（离开触发条件后自动重置）
 bool cliff_front_alerted = false;
 bool cliff_back_alerted  = false;
-bool fall_alerted     = false;
 bool agitated_alerted = false;
 
 // 待发警报（下次上报时带上，发完清空）
@@ -314,18 +315,6 @@ void loop() {
     } else {
         dizzy_start   = 0;
         dizzy_alerted = false;
-    }
-
-    // 跌落检测：合力 < 0.3g 且无晕眩
-    float accel_total = sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
-    if (accel_total < 0.3f && !dizzy_alerted) {
-        if (current_action != "stop") { setMotor(0, 0, 0, 0, 0); current_action = "stop"; }
-        if (!fall_alerted) {
-            fall_alerted = true;
-            if (pending_alert.isEmpty()) pending_alert = "fall";
-        }
-    } else {
-        fall_alerted = false;
     }
 
     // 接收香橙派指令

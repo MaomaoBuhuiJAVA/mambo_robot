@@ -614,6 +614,8 @@ int main() {
     std::string auto_drive_filtered_cmd = "stop";
     std::string auto_drive_last_raw = "stop";
     int auto_drive_same_cnt = 0;
+    // 跟随：水平方向用较快 EMA + 「原始 nx 已回中」立刻停转，减轻平滑滞后导致的甩头过头
+    float follow_nx_smooth = 0.f;
 
     mambo::VisionEngine vision;
     mambo::DialogSystem dialog(&serial, &web);
@@ -860,9 +862,10 @@ int main() {
     // 主线程：串口轮询 + 控制台打印 + status推送
     auto last_print = std::chrono::steady_clock::now();
     auto last_object_lib_disk_save = std::chrono::steady_clock::now() - std::chrono::hours(1);
-    auto last_fall_alert = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     auto last_auto_drive = std::chrono::steady_clock::now() - std::chrono::seconds(10);
     auto last_scissors_alarm = std::chrono::steady_clock::now() - std::chrono::seconds(30);
+    // 运动能量：仅静止且视觉前方有人时从 LD2402 刷新，否则保持上次展示值（避免车体自运动时干扰）
+    int radar_energy_display = 0;
 
     struct AlertEvent {
         std::string ts;
@@ -1023,6 +1026,13 @@ int main() {
         // 轮询串口接收 ESP32 上报
         serial.Poll();
         auto esp = serial.GetEsp32Data();
+        {
+            const bool robot_still =
+                esp.valid && (esp.act == "stop" || esp.act == "blocked" || esp.act.empty());
+            const bool person_ahead = !faces.empty();
+            if (robot_still && person_ahead)
+                radar_energy_display = esp.radar_energy;
+        }
         monitor_event_reporter.ReportVisionIfNeeded(faces);
         // 把当前是否在运动告知对话系统（用于“运动时不录音”开关）
         bool moving = esp.valid && !(esp.act == "stop" || esp.act == "blocked" || esp.act.empty());
@@ -1039,32 +1049,65 @@ int main() {
                 auto_cmd = "stop";
                 decided = true;
             }
-            if (auto_modes_on && !decided && follow_mode_enabled.load() && hf && fw > 0 && fh > 0 && box.width > 0 && box.height > 0) {
+            const bool in_follow_geom =
+                follow_mode_enabled.load() && hf && fw > 0 && fh > 0 && box.width > 0 && box.height > 0;
+            float nx_raw = 0.f;
+            if (in_follow_geom) {
                 const float cx = box.x + box.width * 0.5f;
-                const float nx = (cx - fw * 0.5f) / std::max(1.0f, fw * 0.5f);
-                const float area_ratio = (float)(box.width * box.height) / std::max(1.0f, (float)(fw * fh));
-                if (std::fabs(nx) > 0.20f) {
-                    auto_cmd = (nx > 0.f) ? "right" : "left";
-                } else if (area_ratio < 0.06f) {
-                    auto_cmd = "forward";
-                } else if (area_ratio > 0.20f) {
-                    auto_cmd = "backward";
+                nx_raw = (cx - fw * 0.5f) / std::max(1.0f, fw * 0.5f);
+                // 跟得上人脸移动，避免 smooth 落后一截还在发转向 → 物理过冲
+                follow_nx_smooth = 0.58f * follow_nx_smooth + 0.42f * nx_raw;
+            } else {
+                follow_nx_smooth = 0.f;
+            }
+            if (auto_modes_on && !decided && in_follow_geom) {
+                const float area_ratio =
+                    (float)(box.width * box.height) / std::max(1.0f, (float)(fw * fh));
+                const float kAlignHold = 0.15f;
+                const float kTurnNeed  = 0.20f;
+                // 水平已对准：中间一段距离都先停车，避免框略抖就触发「前进」停不下来
+                const float kAreaFwd = 0.042f;
+                const float kAreaBwd = 0.22f;
+                if (std::fabs(nx_raw) < kAlignHold) {
+                    if (area_ratio < kAreaFwd) {
+                        auto_cmd = "forward";
+                    } else if (area_ratio > kAreaBwd) {
+                        auto_cmd = "backward";
+                    } else {
+                        auto_cmd = "stop";
+                    }
+                } else if (follow_nx_smooth > kTurnNeed) {
+                    auto_cmd = "right";
+                } else if (follow_nx_smooth < -kTurnNeed) {
+                    auto_cmd = "left";
                 } else {
-                    auto_cmd = "stop";
+                    if (area_ratio < kAreaFwd) {
+                        auto_cmd = "forward";
+                    } else if (area_ratio > kAreaBwd) {
+                        auto_cmd = "backward";
+                    } else {
+                        auto_cmd = "stop";
+                    }
                 }
                 decided = true;
             }
             if (auto_modes_on) {
-                // 1) 对原始 auto_cmd 做“连续确认”过滤，减少因人脸框抖动频繁切换
-                if (auto_cmd == auto_drive_last_raw) {
-                    auto_drive_same_cnt++;
+                // 1) 连续确认减轻抖；stop 立即生效，避免人已居中仍多冲半秒
+                if (auto_cmd == "stop") {
+                    auto_drive_filtered_cmd = "stop";
+                    auto_drive_same_cnt     = 0;
+                    auto_drive_last_raw     = "stop";
                 } else {
-                    auto_drive_same_cnt = 1;
-                    auto_drive_last_raw = auto_cmd;
-                }
-                if (auto_drive_same_cnt >= 3) { // 连续 3 次相同才真正采纳
-                    auto_drive_filtered_cmd = auto_cmd;
-                    auto_drive_same_cnt = 0;
+                    if (auto_cmd == auto_drive_last_raw) {
+                        auto_drive_same_cnt++;
+                    } else {
+                        auto_drive_same_cnt = 1;
+                        auto_drive_last_raw = auto_cmd;
+                    }
+                    if (auto_drive_same_cnt >= 3) {
+                        auto_drive_filtered_cmd = auto_cmd;
+                        auto_drive_same_cnt    = 0;
+                    }
                 }
 
                 // 2) 基于平滑后的指令下发
@@ -1086,16 +1129,9 @@ int main() {
 
         // 消费警报，触发语音
         std::string alert = serial.ConsumeAlert();
-        if (!alert.empty()) {
-            if (alert == "cliff") {
-                playAlert("啊！前面是悬崖，星宝~");
-            } else if (alert == "fall") {
-                auto now = std::chrono::steady_clock::now();
-                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fall_alert).count() >= 5000) {
-                    last_fall_alert = now;
-                    playAlert("啊！星宝要跌落了！");
-                }
-            } else if (alert == "dizzy") {
+        // cliff：固件侧红外边沿 + 自动回退，此处不播报
+        if (!alert.empty() && alert != "cliff") {
+            if (alert == "dizzy") {
                 web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
                 playAlert("别晃了，星宝好晕呀~");
             } else if (alert == "agitated") {
@@ -1208,7 +1244,7 @@ int main() {
             }
             json += "]";
             json += ",\"dialog_events\":" + dialog.GetRecentDialogEventsJson();
-            std::string espStatus = serial.GetEsp32Status();
+            std::string espStatus = serial.GetEsp32Status(radar_energy_display);
             if (!espStatus.empty()) json += ",\"esp32\":{" + espStatus + "}";
             json += "}";
             web.PushStatus(json);
@@ -1242,7 +1278,7 @@ int main() {
                           << "雷达:" << (esp.radar ? "触发" : "无") << "  "
                           << "动作:" << esp.act
                           << "  雷达距离:" << esp.radar_dist << "cm"
-                          << "  运动能量:" << esp.radar_energy;
+                          << "  运动能量:" << radar_energy_display;
             } else {
                 std::cout << "\n└─ ESP32  等待连接...";
             }
