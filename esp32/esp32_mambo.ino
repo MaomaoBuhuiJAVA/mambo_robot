@@ -109,8 +109,10 @@ void ldReadSerial() {
     }
 }
 
-// 悬崖后退结束时间（0=未激活）
-unsigned long cliff_back_until = 0;
+// 悬崖逃逸结束时间（0=未激活）
+unsigned long cliff_escape_until = 0;
+// true=向前逃逸；false=向后逃逸
+bool cliff_escape_forward = false;
 const unsigned long CLIFF_BACK_MS = 1000;
 
 // MPU6050 原始数据
@@ -281,7 +283,7 @@ void loop() {
     unsigned long now_ms = millis();
 
     // 超时自动停止
-    if (current_action != "stop" && current_action != "blocked" && cliff_back_until == 0) {
+    if (current_action != "stop" && current_action != "blocked" && cliff_escape_until == 0) {
         if (now_ms - last_cmd_time > CMD_TIMEOUT) {
             setMotor(0, 0, 0, 0, 0);
             current_action = "stop";
@@ -289,30 +291,34 @@ void loop() {
     }
 
     // 悬崖检测
-    if (cliff_back_until > 0) {
-        if (now_ms < cliff_back_until) {
-            driveBackward(motor_speed);
+    if (cliff_escape_until > 0) {
+        if (now_ms < cliff_escape_until) {
+            if (cliff_escape_forward) driveForward(motor_speed);
+            else driveBackward(motor_speed);
             current_action = "emergency_back";
             last_cmd_time  = now_ms;
         } else {
             setMotor(0, 0, 0, 0, 0);
             current_action   = "stop";
-            cliff_back_until = 0;
+            cliff_escape_until = 0;
         }
     } else if (cliffFront() && !cliff_front_alerted) {
         // 前侧悬空：短时后退脱离边沿
-        cliff_back_until = now_ms + CLIFF_BACK_MS;
+        cliff_escape_until = now_ms + CLIFF_BACK_MS;
+        cliff_escape_forward = false;
         cliff_front_alerted = true;
         pending_alert       = "cliff";
         setMotor(0, 1, 0, 1, motor_speed);
         current_action = "emergency_back";
         last_cmd_time  = now_ms;
     } else if (cliffBack() && !cliff_back_alerted) {
-        // 后侧悬空：切勿继续倒车，立即停车并报警
+        // 后侧悬空：短时前进脱离边沿
+        cliff_escape_until   = now_ms + CLIFF_BACK_MS;
+        cliff_escape_forward = true;
         cliff_back_alerted = true;
         pending_alert      = "cliff";
-        setMotor(0, 0, 0, 0, 0);
-        current_action = "stop";
+        driveForward(motor_speed);
+        current_action = "emergency_back";
         last_cmd_time  = now_ms;
     }
     if (!cliffFront()) cliff_front_alerted = false;

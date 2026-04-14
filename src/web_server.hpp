@@ -226,17 +226,25 @@ public:
         auto mjpeg_handler = [this](size_t, httplib::DataSink& sink) {
             uint64_t last_sent_seq = 0;
             const auto interval = std::chrono::milliseconds(1000 / std::max(1, AppConfig::kVideoStreamFps));
+            auto last_send_at = std::chrono::steady_clock::now();
             while (running_) {
                 uint64_t seq = 0;
                 auto frame = GetLatestEncodedFrame(seq);
                 if (!frame || frame->empty()) { std::this_thread::sleep_for(std::chrono::milliseconds(20)); continue; }
-                if (seq == last_sent_seq) { std::this_thread::sleep_for(interval); continue; }
+                // 若长时间没有新帧（例如摄像头 select() timeout 卡住），部分浏览器会把连接当作“断流”。
+                // 因此即便 seq 未变化，也定期重发上一帧做 keep-alive（画面会冻结但不断开）。
+                if (seq == last_sent_seq) {
+                    const auto now = std::chrono::steady_clock::now();
+                    const auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_send_at).count();
+                    if (idle_ms < 900) { std::this_thread::sleep_for(interval); continue; }
+                }
                 std::string hdr = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
                     + std::to_string(frame->size()) + "\r\nX-Frame-Id: " + std::to_string(seq) + "\r\n\r\n";
                 if (!sink.write(hdr.c_str(), hdr.size())) return false;
                 if (!sink.write(reinterpret_cast<const char*>(frame->data()), frame->size())) return false;
                 if (!sink.write("\r\n", 2)) return false;
                 last_sent_seq = seq;
+                last_send_at = std::chrono::steady_clock::now();
             }
             return true;
         };

@@ -53,7 +53,7 @@ struct AppConfig {
 
     // ===== 统一监护事件上报 =====
     static constexpr bool kMonitorEventIngestEnabled = true;
-    static constexpr const char* kMonitorEventBaseUrl = "http://10.2.3.86:8089";
+    static constexpr const char* kMonitorEventBaseUrl = "http://192.168.110.93:8089";
     static constexpr const char* kMonitorEventPath = "/app/public/monitor/events";
     static constexpr const char* kMonitorEventAccessKey = "xinxing-monitor-key-2026";
     static constexpr long long kMonitorChildId = 2036013232947302402LL;

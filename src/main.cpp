@@ -686,8 +686,7 @@ int main() {
     dialog.Start();
     std::cerr << "[Console] 输入 `1`/`2`/`toggle` 切换后端；`backend ?` 查看当前。\n";
 
-    // 警报 TTS 播放（异步，不阻塞主循环）
-    auto playAlert = [&dialog](const std::string& text) { dialog.PlayAlertTts(text); };
+    // 警报 TTS 播放已在“消费警报”处移除（取消自动说话）
 
     // 摄像头初始化
     cv::VideoCapture cap;
@@ -973,7 +972,7 @@ int main() {
                 } catch (...) {}
             }
             push_alert_event({now_ts_readable(), reason, detail, dir});
-            playAlert("警告，检测到剪刀，请注意安全。");
+            // 这里原本会触发 TTS 自动播报；已按“取消自动说话”需求移除。
         }
 
         // 告警证据抓拍：10秒内每500ms保存一帧图片
@@ -1130,17 +1129,15 @@ int main() {
             last_auto_drive = now_ctrl;
         }
 
-        // 消费警报，触发语音
+    // 消费警报（仅更新表情/上报，不自动播报 TTS）
         std::string alert = serial.ConsumeAlert();
         // cliff：固件侧红外边沿 + 自动回退，此处不播报
         if (!alert.empty() && alert != "cliff") {
             if (alert == "dizzy") {
                 web.PushEyeData(0, 0, "Dizzy"); // 晕眩旋涡表情
-                playAlert("别晃了，星宝好晕呀~");
             } else if (alert == "agitated") {
                 monitor_event_reporter.ReportSensorAlertIfNeeded(alert, esp);
                 web.PushEyeData(0, 0, "Worried"); // 担心表情
-                playAlert("小朋友，星宝在这里陪你，别着急哦~");
             }
         }
 
