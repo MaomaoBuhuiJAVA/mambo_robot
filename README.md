@@ -42,19 +42,114 @@ mambo_robot/
 
 ## 依赖安装
 
-### 第三方库
-请下载以下单头文件库并放置在 `third_party/` 目录：
-- [httplib.h](https://github.com/yhirose/cpp-httplib)
-- [json.hpp](https://github.com/nlohmann/json)
+### 需要准备的文件（新机器最容易漏）
 
-### 系统依赖
+- **模型文件（必须）**：`models/`
+  - `yolov5.nb`（NPU YOLO）
+  - `face_detection_yunet_2023mar.onnx`（YuNet）
+  - `face_recognition_sface_2021dec.onnx`（SFace）
+  - `emotion-ferplus-8.onnx`（当前默认禁用，但建议保留文件）
+- **人脸底库（可选）**：`faces/` 或 `src/config.hpp` 里配置的 `kBaseImgDir`
+
+说明：
+- `third_party/` 已随仓库提供（`httplib.h`、`json.hpp` 等），一般**不需要额外下载**。
+
+### OrangePi（推荐部署环境）系统依赖清单
+
+在新刷的 OrangePi/Ubuntu/Armbian 系统上，建议直接装齐下面这些（一次到位）：
+
 ```bash
-# OpenCV
-sudo apt-get install libopencv-dev
-
-# 其他依赖
-sudo apt-get install cmake build-essential
+sudo apt update
+sudo apt install -y \
+  git cmake build-essential pkg-config \
+  libopencv-dev \
+  libcurl4-openssl-dev \
+  v4l-utils \
+  ffmpeg \
+  alsa-utils pulseaudio-utils pipewire-audio \
+  xdg-utils
 ```
+
+常见用途：
+- `libopencv-dev`：YuNet/SFace/OpenCV（含 DNN）
+- `libcurl4-openssl-dev`：HTTP 请求（对话/上报等）
+- `v4l-utils`：摄像头排查（`v4l2-ctl`）
+- `alsa-utils/pulseaudio-utils/pipewire-audio`：音量/播放链路排查
+- `xdg-utils`：脚本里拉起浏览器（若用到）
+
+### 开发电脑（用于改代码/提交 GitHub）
+
+如果只是改代码 + 推送 GitHub：只需要 **Git**。
+
+如果要在电脑本地也能编译（Linux 电脑推荐）：
+
+```bash
+sudo apt update
+sudo apt install -y git cmake build-essential libopencv-dev libcurl4-openssl-dev
+```
+
+Windows 本机通常不作为运行环境；如果需要在 Windows 上编译，建议使用 WSL2（Ubuntu）按上面的 Linux 方式装依赖。
+
+## 新 OrangePi 快速部署（从 0 到可运行）
+
+### 1) 拉代码
+
+```bash
+git clone <your-github-repo-url>
+cd mambo_robot
+```
+
+### 2) 放模型文件
+
+把模型拷贝到 `./models/`（确保文件名与 `src/config.hpp` 中一致）。
+
+快速自检：
+
+```bash
+ls -lh models/
+```
+
+### 3) 配置关键参数
+
+编辑 `src/config.hpp`：
+- **串口**：`kSerialPort`（例如 `/dev/ttyS7`、`/dev/ttyUSB0` 等）
+- **摄像头**：`kCameraIndex`、分辨率、帧率等
+- **云端 key**：百度/DeepSeek 等（如果启用云链路）
+
+### 4) 串口权限（非常常见的“部署后无法打开串口”原因）
+
+```bash
+ls -l /dev/ttyS7
+groups
+sudo usermod -aG dialout $USER
+```
+
+执行完 `usermod` 后需要**重新登录**一次（或重启）让组权限生效。
+
+如果你的设备不是 `/dev/ttyS7`，请用下面命令找真实设备名：
+
+```bash
+ls /dev/ttyS* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+```
+
+### 5) 摄像头自检
+
+```bash
+v4l2-ctl --list-devices
+v4l2-ctl -d /dev/video0 --all
+```
+
+### 6) 一键编译运行
+
+```bash
+chmod +x build.sh run.sh
+./build.sh
+./run.sh
+```
+
+提示：
+- `build.sh` 会**删除 build 目录并全量重编译**，适合首次部署/大改动后使用
+- `run.sh` 默认会走“快速启动”，如果你刚改了代码又想马上生效，优先跑 `./build.sh`
 
 ## 编译运行
 
