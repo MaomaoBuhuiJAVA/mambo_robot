@@ -2,7 +2,6 @@
 #include "config.hpp"
 #include <opencv2/opencv.hpp>
 #include <opencv2/objdetect.hpp>
-#include <opencv2/dnn.hpp>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -19,14 +18,26 @@ public:
         yolo_ctx_ = awnn_create(AppConfig::kYoloModelPath);
         yolo_buffer_.resize(AppConfig::kInputSize * AppConfig::kInputSize * 3);
 
-        face_det_ = cv::FaceDetectorYN::create(AppConfig::kYunetPath, "", cv::Size(320, 320));
-        face_det_->setScoreThreshold(0.5f);
-        face_det_->setNMSThreshold(0.3f);
+        try {
+            face_det_ = cv::FaceDetectorYN::create(AppConfig::kYunetPath, "", cv::Size(320, 320));
+            face_det_->setScoreThreshold(0.5f);
+            face_det_->setNMSThreshold(0.3f);
+            face_rec_ = cv::FaceRecognizerSF::create(AppConfig::kSfacePath, "");
+            yunet_ok_ = true;
+            LoadFaceDatabase();
+        } catch (const cv::Exception& e) {
+            yunet_ok_ = false;
+            face_det_.release();
+            face_rec_.release();
+            std::cerr << "[Warning] YuNet/SFace 初始化失败，已禁用人脸相关功能: " << e.what() << std::endl;
+        } catch (...) {
+            yunet_ok_ = false;
+            face_det_.release();
+            face_rec_.release();
+            std::cerr << "[Warning] YuNet/SFace 初始化失败，已禁用人脸相关功能" << std::endl;
+        }
 
-        face_rec_ = cv::FaceRecognizerSF::create(AppConfig::kSfacePath, "");
-        emotion_net_ = cv::dnn::readNetFromONNX(AppConfig::kEmotionPath);
-
-        LoadFaceDatabase();
+        std::cerr << "[Info] 情绪DNN模块已禁用，使用默认情绪输出" << std::endl;
     }
 
     ~VisionEngine() {
@@ -37,16 +48,32 @@ public:
     // 快速人脸检测（只用 YuNet，不做识别和情绪，给眼睛跟随用）
     std::vector<cv::Rect> DetectFaceBoxes(const cv::Mat& frame) {
         std::vector<cv::Rect> boxes;
-        cv::Mat small;
-        cv::resize(frame, small, cv::Size(320, 240));  // 降低分辨率加速
+
+        // YuNet 在 OpenCV 4.5.4 下对“高度 < 320”的动态输入尺寸容易不稳定（可能触发 layer id=-1）。
+        // 这里固定采用 320x320 的 letterbox 输入做快速检测。
+        constexpr int kDetSize = 320;
+        const float ratio = std::min((float)kDetSize / frame.cols, (float)kDetSize / frame.rows);
+        const int nw = std::max(1, (int)std::round(frame.cols * ratio));
+        const int nh = std::max(1, (int)std::round(frame.rows * ratio));
+        const int dx = (kDetSize - nw) / 2;
+        const int dy = (kDetSize - nh) / 2;
+        cv::Mat canvas(kDetSize, kDetSize, CV_8UC3, cv::Scalar(0, 0, 0));
+        cv::resize(frame, canvas(cv::Rect(dx, dy, nw, nh)), cv::Size(nw, nh));
+
         cv::Mat faces;
-        face_det_->setInputSize(small.size());
-        face_det_->detect(small, faces);
-        float scale_x = (float)frame.cols / 320.0f;
-        float scale_y = (float)frame.rows / 240.0f;
+        SafeYuNetDetect(canvas, faces);
         for (int i = 0; i < faces.rows; i++) {
-            cv::Rect box((int)(faces.at<float>(i,0) * scale_x), (int)(faces.at<float>(i,1) * scale_y),
-                         (int)(faces.at<float>(i,2) * scale_x), (int)(faces.at<float>(i,3) * scale_y));
+            const float x = faces.at<float>(i, 0);
+            const float y = faces.at<float>(i, 1);
+            const float w = faces.at<float>(i, 2);
+            const float h = faces.at<float>(i, 3);
+
+            const float rx = (x - dx) / ratio;
+            const float ry = (y - dy) / ratio;
+            const float rw = w / ratio;
+            const float rh = h / ratio;
+
+            cv::Rect box((int)rx, (int)ry, (int)rw, (int)rh);
             box = box & cv::Rect(0, 0, frame.cols, frame.rows);
             if (box.width >= 20) boxes.push_back(box);
         }
@@ -106,11 +133,45 @@ private:
     std::vector<uint8_t> yolo_buffer_;
     cv::Ptr<cv::FaceDetectorYN> face_det_;
     cv::Ptr<cv::FaceRecognizerSF> face_rec_;
-    cv::dnn::Net emotion_net_;
 
     struct PersonRecord { std::string name; cv::Mat feature; };
     std::vector<PersonRecord> face_db_;
     std::vector<FaceResult> last_faces_;
+    bool yunet_ok_ = true;
+
+    static cv::Mat PadRightBottomToMultiple(const cv::Mat& src, int multiple, int min_w = 0, int min_h = 0) {
+        if (src.empty()) return src;
+        const int want_w = std::max(src.cols, min_w);
+        const int want_h = std::max(src.rows, min_h);
+        const int new_w = ((want_w + multiple - 1) / multiple) * multiple;
+        const int new_h = ((want_h + multiple - 1) / multiple) * multiple;
+        if (new_w == src.cols && new_h == src.rows) return src;
+
+        cv::Mat dst;
+        const int right = new_w - src.cols;
+        const int bottom = new_h - src.rows;
+        cv::copyMakeBorder(src, dst, 0, bottom, 0, right, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        return dst;
+    }
+
+    bool SafeYuNetDetect(const cv::Mat& img, cv::Mat& out_faces) {
+        if (!yunet_ok_ || face_det_.empty()) return false;
+        try {
+            face_det_->setInputSize(img.size());
+            face_det_->detect(img, out_faces);
+            return true;
+        } catch (const cv::Exception& e) {
+            std::cerr << "[Warning] YuNet detect 异常，已临时禁用人脸检测: " << e.what() << std::endl;
+            yunet_ok_ = false;
+            out_faces.release();
+            return false;
+        } catch (...) {
+            std::cerr << "[Warning] YuNet detect 异常，已临时禁用人脸检测" << std::endl;
+            yunet_ok_ = false;
+            out_faces.release();
+            return false;
+        }
+    }
 
     void LoadFaceDatabase() {
         std::vector<std::pair<std::string, std::string>> templates = {
@@ -126,14 +187,14 @@ private:
             }
 
             cv::Mat faces;
-            face_det_->setInputSize(img.size());
-            face_det_->detect(img, faces);
+            cv::Mat det_img = PadRightBottomToMultiple(img, 32, 320, 320);
+            SafeYuNetDetect(det_img, faces);
 
             if (faces.rows == 0) {
                 cv::Mat resized;
                 cv::resize(img, resized, cv::Size(640, 480));
-                face_det_->setInputSize(resized.size());
-                face_det_->detect(resized, faces);
+                det_img = PadRightBottomToMultiple(resized, 32, 320, 320);
+                SafeYuNetDetect(det_img, faces);
                 if (faces.rows > 0) img = resized;
             }
 
@@ -152,8 +213,8 @@ private:
     std::vector<FaceResult> DetectFaces(const cv::Mat& frame) {
         std::vector<FaceResult> results;
         cv::Mat faces;
-        face_det_->setInputSize(frame.size());
-        face_det_->detect(frame, faces);
+        cv::Mat det_frame = PadRightBottomToMultiple(frame, 32, 320, 320);
+        SafeYuNetDetect(det_frame, faces);
 
         for (int i = 0; i < faces.rows; i++) {
             cv::Rect box((int)faces.at<float>(i,0), (int)faces.at<float>(i,1),
@@ -161,15 +222,8 @@ private:
             box = box & cv::Rect(0, 0, frame.cols, frame.rows);
             if (box.width < 20) continue;
 
-            // 情绪识别
-            cv::Mat roi = frame(box).clone();
-            cv::cvtColor(roi, roi, cv::COLOR_BGR2GRAY);
-            cv::Mat blob = cv::dnn::blobFromImage(roi, 1.0, cv::Size(64, 64), cv::Scalar(0), false, false);
-            emotion_net_.setInput(blob);
-            cv::Mat prob = emotion_net_.forward();
-            cv::Point classIdPoint;
-            cv::minMaxLoc(prob, 0, 0, 0, &classIdPoint);
-            std::string emotion = kEmotionNames[classIdPoint.x];
+            // 情绪DNN模块已禁用，统一输出默认情绪
+            std::string emotion = "ZhongXing";
 
             // 人脸识别
             std::string name = "Unknown";

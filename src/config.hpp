@@ -18,6 +18,7 @@ struct AppConfig {
     static constexpr const char* kYunetPath     = "./models/face_detection_yunet_2023mar.onnx";
     static constexpr const char* kSfacePath     = "./models/face_recognition_sface_2021dec.onnx";
     static constexpr const char* kEmotionPath   = "./models/emotion-ferplus-8.onnx";
+    static constexpr bool kEnableEmotionModel   = false;  // OpenCV 4.5.4 下该模型不稳定，默认关闭
     static constexpr const char* kBaseImgDir    = "./faces/";
 
     // 串口 & Web
