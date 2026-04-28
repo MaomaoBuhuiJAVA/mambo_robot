@@ -151,6 +151,94 @@ chmod +x build.sh run.sh
 - `build.sh` 会**删除 build 目录并全量重编译**，适合首次部署/大改动后使用
 - `run.sh` 默认会走“快速启动”，如果你刚改了代码又想马上生效，优先跑 `./build.sh`
 
+## OpenCV 升级（OrangePi 上推荐 4.8/4.9，用于稳定 YuNet）
+
+当前系统仓库自带的 OpenCV 4.5.4 在部分 DNN ONNX（例如 `face_detection_yunet_2023mar.onnx`）上可能出现不稳定（例如 layer id=-1）。推荐在 OrangePi 上升级到 **OpenCV 4.8/4.9**。
+
+下面给出一套“源码编译安装到 `/usr/local`”的流程（通用、最稳），项目的 `CMakeLists.txt` 已做了 `/usr/local` 优先查找的兼容。
+
+### 1) 安装编译依赖
+
+```bash
+sudo apt update
+sudo apt install -y \
+  git cmake build-essential pkg-config \
+  libjpeg-dev libpng-dev libtiff-dev \
+  libavcodec-dev libavformat-dev libswscale-dev \
+  libv4l-dev libxvidcore-dev libx264-dev \
+  libgtk-3-dev \
+  libatlas-base-dev gfortran \
+  python3-dev python3-numpy
+```
+
+### 2) 获取 OpenCV 源码（以 4.9.0 为例）
+
+```bash
+cd ~
+git clone --depth 1 --branch 4.9.0 https://github.com/opencv/opencv.git
+git clone --depth 1 --branch 4.9.0 https://github.com/opencv/opencv_contrib.git
+```
+
+### 3) 编译并安装到 `/usr/local`
+
+```bash
+cd ~/opencv
+mkdir -p build && cd build
+
+cmake -D CMAKE_BUILD_TYPE=Release \
+      -D CMAKE_INSTALL_PREFIX=/usr/local \
+      -D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib/modules \
+      -D BUILD_EXAMPLES=OFF \
+      -D BUILD_TESTS=OFF \
+      -D BUILD_PERF_TESTS=OFF \
+      -D BUILD_opencv_python3=OFF \
+      -D WITH_GSTREAMER=ON \
+      -D WITH_V4L=ON \
+      -D WITH_OPENGL=OFF \
+      -D WITH_TBB=OFF \
+      ..
+
+make -j"$(nproc)"
+sudo make install
+sudo ldconfig
+```
+
+编译时间说明：
+- OrangePi 上第一次编译可能需要 20~60 分钟（取决于存储/散热/CPU 降频）。
+
+### 4) 验证版本
+
+```bash
+pkg-config --modversion opencv4 || true
+python3 - <<'PY'
+import cv2
+print(cv2.__version__)
+PY
+```
+
+### 5) 让本项目使用新 OpenCV
+
+一般来说安装到 `/usr/local` 后，`cmake` 会优先找到新版本（本项目也已在 `CMakeLists.txt` 里对 `/usr/local` 做了优先路径）。
+
+如果仍然链接到了旧的 `/usr` 版本，可以在构建本项目时显式指定：
+
+```bash
+cd ~/Desktop/mambo_robot
+rm -rf build
+OpenCV_DIR=/usr/local/lib/cmake/opencv4 ./build.sh
+```
+
+### 6) 常见冲突处理（可选）
+
+如果系统里同时存在 `libopencv-dev`（旧版）和 `/usr/local`（新版），通常没问题；但若你想避免混用，可以卸载旧 dev 包：
+
+```bash
+sudo apt remove -y libopencv-dev
+sudo apt autoremove -y
+```
+
+（注意：卸载可能影响系统里其它依赖 OpenCV 的工具，按需选择。）
+
 ## 编译运行
 
 ```bash

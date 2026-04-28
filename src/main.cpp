@@ -775,6 +775,8 @@ int main() {
         uint64_t last_seq = 0;
         float smooth_cx = mambo::AppConfig::kCameraWidth  / 2.0f;
         float smooth_cy = mambo::AppConfig::kCameraHeight / 2.0f;
+        cv::Rect last_person_box;
+        bool has_person_box = false;
         auto t0 = std::chrono::steady_clock::now();
         constexpr int kObjectRate = 5; // 物品识别刷新率：每 5 帧更新一次（可调）
         constexpr int kFaceRate = 15;  // 人脸/情绪刷新率：每 15 帧更新一次（保持体验）
@@ -812,9 +814,19 @@ int main() {
 
             // 直接在推理线程推送眼睛坐标，情绪由 LLM 控制
             {
+                bool has_target = false;
+                float target_cx = fw * 0.5f;
+                float target_cy = fh * 0.5f;
                 if (!boxes.empty()) {
-                    float target_cx = boxes[0].x + boxes[0].width  / 2.0f;
-                    float target_cy = boxes[0].y + boxes[0].height / 2.0f;
+                    target_cx = boxes[0].x + boxes[0].width  / 2.0f;
+                    target_cy = boxes[0].y + boxes[0].height / 2.0f;
+                    has_target = true;
+                } else if (has_person_box) {
+                    target_cx = last_person_box.x + last_person_box.width  / 2.0f;
+                    target_cy = last_person_box.y + last_person_box.height / 2.0f;
+                    has_target = true;
+                }
+                if (has_target) {
                     smooth_cx += (target_cx - smooth_cx) * 0.4f;
                     smooth_cy += (target_cy - smooth_cy) * 0.4f;
                 }
@@ -831,6 +843,26 @@ int main() {
             // 物品：高频（只跑 YOLO）
             if (frame_count % kObjectRate == 0) {
                 vision.ProcessObjects(frame, objects);
+                // 用 YOLO 的 “Ren” 框作为眼睛跟随兜底（YuNet 可能因 OpenCV DNN 不稳定而不可用）
+                float best_prob = 0.0f;
+                cv::Rect best_box;
+                for (const auto& o : objects) {
+                    if (o.label != kRenYoloClassId) continue;
+                    if (o.prob < best_prob) continue;
+                    best_prob = o.prob;
+                    best_box = cv::Rect(
+                        (int)std::round(o.rect.x),
+                        (int)std::round(o.rect.y),
+                        (int)std::round(o.rect.width),
+                        (int)std::round(o.rect.height)
+                    ) & cv::Rect(0, 0, fw, fh);
+                }
+                if (best_prob > 0.35f && best_box.area() > 0) {
+                    last_person_box = best_box;
+                    has_person_box = true;
+                } else {
+                    has_person_box = false;
+                }
             }
 
             // 人脸/情绪：低频（只跑脸，不再重复 YOLO）

@@ -3,6 +3,10 @@ project(MamboRobot)
 
 set(CMAKE_CXX_STANDARD 17)
 
+# Prefer a custom OpenCV install (e.g. /usr/local) when upgrading on OrangePi.
+# Users can also pass -DOpenCV_DIR=/path/to/opencv/build or export OpenCV_DIR.
+list(PREPEND CMAKE_PREFIX_PATH "/usr/local")
+
 find_package(OpenCV REQUIRED)
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)

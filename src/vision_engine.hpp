@@ -20,7 +20,8 @@ public:
 
         try {
             face_det_ = cv::FaceDetectorYN::create(AppConfig::kYunetPath, "", cv::Size(320, 320));
-            face_det_->setScoreThreshold(0.5f);
+            // 现场光照/角度变化大时 0.5 容易“始终检测不到人脸”，先更宽松一些。
+            face_det_->setScoreThreshold(0.30f);
             face_det_->setNMSThreshold(0.3f);
             face_rec_ = cv::FaceRecognizerSF::create(AppConfig::kSfacePath, "");
             yunet_ok_ = true;
@@ -138,6 +139,24 @@ private:
     std::vector<PersonRecord> face_db_;
     std::vector<FaceResult> last_faces_;
     bool yunet_ok_ = true;
+    int yunet_call_count_ = 0;
+    int yunet_fail_count_ = 0;
+
+    bool TryReinitYuNet() {
+        try {
+            face_det_ = cv::FaceDetectorYN::create(AppConfig::kYunetPath, "", cv::Size(320, 320));
+            face_det_->setScoreThreshold(0.30f);
+            face_det_->setNMSThreshold(0.3f);
+            if (face_rec_.empty()) {
+                face_rec_ = cv::FaceRecognizerSF::create(AppConfig::kSfacePath, "");
+            }
+            yunet_ok_ = true;
+            std::cerr << "[Info] YuNet 已恢复启用\n";
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
 
     static cv::Mat PadRightBottomToMultiple(const cv::Mat& src, int multiple, int min_w = 0, int min_h = 0) {
         if (src.empty()) return src;
@@ -155,7 +174,12 @@ private:
     }
 
     bool SafeYuNetDetect(const cv::Mat& img, cv::Mat& out_faces) {
-        if (!yunet_ok_ || face_det_.empty()) return false;
+        ++yunet_call_count_;
+        if (!yunet_ok_ || face_det_.empty()) {
+            // 不要永久禁用：周期性重试恢复（约每 2 秒一次，取决于调用频率）
+            if (yunet_call_count_ % 60 == 0) TryReinitYuNet();
+            return false;
+        }
         try {
             face_det_->setInputSize(img.size());
             face_det_->detect(img, out_faces);
@@ -163,11 +187,13 @@ private:
         } catch (const cv::Exception& e) {
             std::cerr << "[Warning] YuNet detect 异常，已临时禁用人脸检测: " << e.what() << std::endl;
             yunet_ok_ = false;
+            ++yunet_fail_count_;
             out_faces.release();
             return false;
         } catch (...) {
             std::cerr << "[Warning] YuNet detect 异常，已临时禁用人脸检测" << std::endl;
             yunet_ok_ = false;
+            ++yunet_fail_count_;
             out_faces.release();
             return false;
         }
