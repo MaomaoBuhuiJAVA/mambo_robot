@@ -4,6 +4,36 @@
 
 **硬件制作与接线**见 [docs/制作说明.md](docs/制作说明.md)（ESP32 引脚、串口协议、香橙派配置与烧录）。
 
+## 快速总览（新机器/新板子必看）
+
+### 你需要准备的“下载/拷贝”内容（最容易漏）
+
+- **代码仓库**：`mambo_robot/`
+- **模型文件（必须）**：拷贝到 `models/`
+  - `yolov5.nb`（NPU YOLO）
+  - `face_detection_yunet_2023mar.onnx`（YuNet 人脸检测）
+  - `face_recognition_sface_2021dec.onnx`（SFace 人脸识别）
+  - `emotion-ferplus-8.onnx`（当前默认禁用，但建议保留）
+- **人脸底库图片（可选）**：`faces/`（默认 `./faces/`，可在 `src/config.hpp` 的 `kBaseImgDir` 修改）
+- **NPU/系统运行库（必须，通常随镜像自带）**
+  - 项目会链接 `NBGlinker` / `VIPhal` / `websockets` / `asound` 等库（见 `CMakeLists.txt`）
+  - 这些通常来自板卡镜像/厂商 SDK；若你换系统，需要确保这些库仍存在且可被动态链接器找到
+
+### 接线要点（摘要）
+
+完整接线表请看 [docs/制作说明.md](docs/制作说明.md)。这里给部署时最常用的摘要：
+
+- **SBC（OrangePi）↔ ESP32-S3（TTL 串口）**
+  - 波特率：115200，8N1
+  - 交叉接线：SBC_TX → ESP32_RX(GPIO16)，SBC_RX ← ESP32_TX(GPIO17)，GND 共地
+  - SBC 串口设备节点在 `src/config.hpp` 的 `kSerialPort`（示例 `/dev/ttyS7`，以你板子实际为准）
+- **LD2402 雷达 ↔ ESP32（UART）**：ESP32 Serial2 RX=GPIO18、TX=GPIO19（交叉接）
+- **跌落红外 ×2 ↔ ESP32**：前/后分别 GPIO5/GPIO6（固件为 `INPUT_PULLDOWN`，触发高电平）
+- **电机驱动 L298N ↔ ESP32**
+  - ENA=10, IN1=11, IN2=12, IN3=13, IN4=14, ENB=15
+  - 电机电源独立，注意与 ESP32/L298N 逻辑地共地
+- **MPU6050 ↔ ESP32（I2C）**：SDA=GPIO8，SCL=GPIO9
+
 ## 项目结构
 
 ```
@@ -150,6 +180,28 @@ chmod +x build.sh run.sh
 提示：
 - `build.sh` 会**删除 build 目录并全量重编译**，适合首次部署/大改动后使用
 - `run.sh` 默认会走“快速启动”，如果你刚改了代码又想马上生效，优先跑 `./build.sh`
+
+## 常见问题速查（部署现场高频）
+
+### 1) 能检测到 “Ren” 但 “人脸:无”，眼睛不跟随？
+
+- **现象**：控制台能看到 `物品:Ren(xx%)`，但一直 `人脸:无`，眼睛不动。
+- **原因**：YOLO 检的是“人”，眼睛跟随默认依赖 YuNet 检到“人脸框”。旧版 OpenCV（例如 4.5.4）在部分 YuNet ONNX 上还可能不稳定。
+- **处理**：
+  - 优先升级 OpenCV（见下方“OpenCV 升级”）
+  - 或降低 YuNet 阈值 / 确保光照与人脸占比足够（配置在 `src/vision_engine.hpp` 内）
+
+### 2) `[Error] 无法打开串口 /dev/ttyS7`
+
+- 检查设备是否存在：`ls -l /dev/ttyS* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null`
+- 检查权限：`groups`，必要时 `sudo usermod -aG dialout $USER` 后重新登录
+- 部分板子需要在 overlay/设备树启用对应 UART，详见 `docs/制作说明.md` 的串口小节
+
+### 3) `[Audio Error] 无法打开录音设备`
+
+- 用 `arecord -l` / `aplay -l` 查真实声卡编号
+- 修改 `src/config.hpp` 的 `kAlsaRecDevice` / `kAlsaPlayDevice`
+- 仓库 `tools/` 里有 `mic_level.sh`、`mic_echo_test.sh` 可快速自检
 
 ## OpenCV 升级（OrangePi 上推荐 4.8/4.9，用于稳定 YuNet）
 
